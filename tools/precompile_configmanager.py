@@ -1,22 +1,37 @@
-"""Use the installed ConfigManager package without modifying sibling projects."""
-
+"""Validate the reviewed local CM development dependency without modifying it."""
+import json
 from pathlib import Path
-import subprocess
-import sys
+import re
 
 Import("env")
 
-library = Path(env.subst("$PROJECT_LIBDEPS_DIR")) / env.subst("$PIOENV") / "ESP32 Configuration Manager"
-header = library / "src" / "html_content.h"
-generator = library / "tools" / "preCompile_script.py"
-
-# Published packages already contain the matching WebUI asset. Generate only
-# when it is absent; never mix a sibling checkout's WebUI with this version.
-if header.is_file() and header.stat().st_size > 0:
-    print("[I] ConfigManager packaged WebUI ready")
-elif generator.is_file():
-    subprocess.run([sys.executable, str(generator)], cwd=library, check=True)
-    if not header.is_file() or header.stat().st_size == 0:
-        raise RuntimeError("ConfigManager WebUI generation failed")
-else:
-    raise RuntimeError("ConfigManager package is missing its WebUI and generator")
+hint="Set custom_cm_path and an absolute symlink:// dependency in ignored platformio.local.ini; reviewed local CM 4.5.0 is unpublished."
+configured=env.GetProjectOption("custom_cm_path","")
+if not configured:
+    raise RuntimeError("Missing local ConfigManager 4.5 override. "+hint)
+library=Path(configured)
+if not library.is_absolute():
+    raise RuntimeError("ConfigManager local path must be absolute. "+hint)
+library=library.resolve()
+dependencies=env.GetProjectOption("lib_deps",[])
+if isinstance(dependencies,str):dependencies=dependencies.splitlines()
+links=[Path(value.strip()[len("symlink://"):]).resolve() for value in dependencies if value.strip().startswith("symlink://")]
+if library not in links:
+    raise RuntimeError("ConfigManager symlink dependency does not match custom_cm_path. "+hint)
+manifest=library/"library.json"
+if not manifest.is_file():raise RuntimeError("Local ConfigManager manifest is missing. "+hint)
+metadata=json.loads(manifest.read_text(encoding="utf-8"))
+version=metadata.get("version","")
+parsed=re.fullmatch(r"(\d+)\.(\d+)\.(\d+)",version)
+if metadata.get("name")!="ESP32 Configuration Manager" or not parsed or tuple(map(int,parsed.groups()))<(4,5,0):
+    raise RuntimeError("ConfigManager 4.5.0 or newer reviewed development source is required. "+hint)
+header=(library/"src/ConfigManager.h").read_text(encoding="utf-8")
+match=re.search(r'^#define\s+CONFIGMANAGER_VERSION\s+"([^"]+)"',header,re.MULTILINE)
+web=json.loads((library/"webui/package.json").read_text(encoding="utf-8"))
+if not match or match.group(1)!=version or web.get("version")!=version:
+    raise RuntimeError("ConfigManager version mirror mismatch; use one coherent reviewed checkout.")
+asset=library/"src/html_content.h"
+if not asset.is_file() or not asset.stat().st_size:
+    raise RuntimeError("Reviewed local ConfigManager WebUI asset is missing; prepare that checkout separately.")
+# Never regenerate or copy assets from another package; reviewed CM stays unchanged.
+print("[I] Reviewed local ConfigManager "+version+"; matching WebUI ready")

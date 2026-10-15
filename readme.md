@@ -1,58 +1,57 @@
 # SolarBatteryTelemetry
 
-Preparation scaffold for a dedicated ESP32 that will read a battery BMS and a
-Victron solar charger and publish telemetry via MQTT for Home Assistant.
+Version **0.2.0** prepares a dedicated ESP32 for a WiFi/UI/OTA and optional BLE
+worker smoke test. The firmware uses ConfigManager's standard WiFi, System OTA
+and NTP groups, built-in system diagnostics and normal WiFi lifecycle hooks.
+The local reserved static IPv4 is **192.168.2.124**; credentials remain ignored.
 
-**Status: preparation only.** The firmware compiles and links ConfigManager,
-sets application metadata, prints a serial status, and idles. It does not start
-WiFi, MQTT, Bluetooth, a web server, OTA, or GPIO activity. Device adapters,
-runtime settings, MQTT schema/discovery, and the MQTT activity LED are pending.
+BluetoothEnable defaults off. With no verified peers, enabling it starts an idle
+transport worker; it does **not** scan, connect or initialize the NimBLE radio.
+The Bluetooth live page explicitly reports missing peers and this limited scope.
+This is software test preparation, not physical BLE/coexistence acceptance.
 
-## Preparation baseline
+JBD/Victron protocols, measurements, MQTT telemetry/discovery and the activity LED
+are not implemented. There is no display, external GPIO, RS485, battery/charger
+control or inverter behavior in this stage. SolarInverterLimiter is unchanged.
 
-- PlatformIO / Arduino / `nodemcu-32s` (provisional board from the limiter).
-- ESP32 Configuration Manager `4.2.2`, matching the limiter baseline.
-- No display, wired sensors, relay outputs, or RS485 driver in this project.
-- Only the built-in LED is planned as a hardware output, pulsing on successful
-  MQTT publication. Pin and polarity must be confirmed for the actual board.
-- SolarInverterLimiter remains responsible for inverter control.
+## Development dependency and local setup
 
-Read [project.info.md](project.info.md) for decisions, context, and open questions.
+The prepared 4.2.2 scaffold built successfully before this runtime. Current smoke
+source requires the independently reviewed **local ConfigManager 4.5.0 development
+checkout**, which is not claimed to be published. Do not use an older registry
+package as a fallback. The tracked configuration declares the actual consumer
+NimBLE-Arduino **2.5.1** dependency; ignored `platformio.local.ini` binds CM through
+an absolute local symlink. See [the smoke guide](docs/ble-smoke-test.md) for the
+exact local configuration and build commands.
 
-## Local configuration
+Only `src/secret/secrets.example.h` is tracked. Local credentials and OTA upload
+authentication follow the limiter, with the collector's unique app identity and
+reserved address. The placeholder file is never automatically provisioned as real
+WiFi credentials. Valid persisted WiFi settings and OTA UI edits survive reboot;
+local network defaults are applied only when stored WiFi credentials are missing
+or structurally invalid. The OTA secret is the existing setting's initial NVS
+default, not a password overwrite on every boot.
 
-`src/secret/secrets.h` contains local credentials copied from the limiter.
-Only the application name and MQTT root were changed to `SolarBatteryTelemetry`.
-The inherited static IP is not a new allocation. Before flashing, the owner must
-select a free address and update `src/secret/secrets.h` and
-`platformio.local.ini`. Credentials and local configuration are ignored by Git.
-
-On a fresh clone, copy `src/secret/secrets.example.h` to `src/secret/secrets.h`
-and create `platformio.local.ini` (an empty file is sufficient for USB builds).
-The example contains placeholders only. This scaffold does not apply network
-settings at runtime yet. ConfigManager UI and credential/default provisioning
-will be connected during the approved implementation phase.
-
-## Local validation
+## Software validation and manual acceptance
 
 ```powershell
-pio run -e usb
-pio run -e ota
-pio run -e usb -t compiledb
+./tools/test/run-smoke-host-tests.ps1
+pio run -e usb -e ota
 ```
 
-These commands build firmware or generate analysis data; they do not upload it.
-No device upload or serial monitor session is part of this preparation.
+These commands run focused host checks and build firmware only. The selected
+stack remains espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s, with the
+existing dual-slot partition layout. Consumer-only central/observer role flags
+and LTO are used as verified in ConfigManager. The known upstream NimBLE LTO
+warning is preserved; see the smoke guide for its exact-image limitations.
 
-## Local agent setup
+On 2026-10-15 the owner authorized USB flashing on COM7. The detected ESP32-D0WD-V3
+with 4 MB flash received the verified 0.2.0 application, bootloader and partition
+files; all upload hashes passed and the device was reset. The owner subsequently
+reported basic operation with no observed crash during the initial short test.
+This is initial smoke feedback, not long-duration, OTA or BLE-radio acceptance;
+those checks and device protocols remain pending.
 
-Governance (`AGENTS.md`, `.github/`), Serena (`.serena/`), ProjectAtlas
-(`.projectatlas/`), editor settings, compilation databases, and local notes are
-intentionally untracked. They exist only on this PC and are not restored by a
-Git clone. Use `.local/tooling.md` on this PC for exact tool commands and
-`.local/governance-provenance.md` for template provenance.
-
-The owner authorized publication to the private GitHub repository
-`vitalyruhl/SolarBatteryTelemetry` on 2026-10-15. A later visibility change
-requires a separate owner decision. Implementation begins only after owner
-review and further device data.
+Read [project.info.md](project.info.md) for installation evidence and future scope.
+Local governance/tooling and `.local/acceptance/` records are intentionally ignored.
+No release, commit, push or publication is implied by these build instructions.
