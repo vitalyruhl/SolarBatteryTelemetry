@@ -1,7 +1,7 @@
 # SolarBatteryTelemetry - Project Information
 
 Date: 2026-10-15 (Europe/Berlin)
-Status: owner-requested preparation checkpoint; telemetry implementation pending.
+Status: 0.2.0 flashed over USB; owner reports basic operation without an observed crash in the initial short test. OTA, BLE-radio and long-duration acceptance remain pending.
 
 ## Purpose and approved scope
 
@@ -10,11 +10,25 @@ Read the battery management system (BMS; called "BMC" in the discussion) and
 the Victron solar charge controller, then publish telemetry via MQTT for Home
 Assistant. Use the owner's ESP32 Configuration Manager for runtime settings.
 
-This checkpoint creates the folder, local Git repository, PlatformIO scaffold,
-local Serena and ProjectAtlas setup, local governance, and this decision record.
-Stop after the local commit and governance adaptation so the owner can review.
-No telemetry adapters, inverter changes, flashing, or device communication are
-authorized in this preparation stage.
+The initial checkpoint created the folder, PlatformIO scaffold, local tooling and
+this decision record; it was reviewed and published privately. On 2026-10-15 the
+owner separately approved the ConfigManager BLE/OTA foundation and, after its
+software gate passed, this limited collector smoke runtime. Current scope is
+WiFi/UI/OTA using the limiter's standard groups/lifecycle plus optional BLE worker
+Disabled/Idle diagnostics. It supplies no peers, device adapters, measurements,
+MQTT telemetry or LED behavior. The owner subsequently authorized USB flashing
+on COM7 and, after the initial short smoke test, local commits of both projects.
+The detected ESP32-D0WD-V3 has 4 MB flash. Application/bootstrap upload hashes
+passed; the owner reports basic operation without an observed crash. This does
+not establish OTA, RF, telemetry or long-duration stability.
+
+Current app version is 0.2.0. The exact reviewed local ConfigManager 4.5.0 checkout
+is an ignored absolute dependency override, not a claimed registry release;
+NimBLE-Arduino 2.5.1 is consumer-owned. The owner reserved 192.168.2.124; local
+network/OTA defaults match the limiter except this unique address/app identity.
+Valid persisted UI settings remain authoritative after initial provisioning.
+With no verified peers, even enabled BLE stays worker-idle without initializing
+the radio. See docs/ble-smoke-test.md for software scope and manual prerequisites.
 
 ## Hardware and reported installation
 
@@ -84,19 +98,19 @@ commonly around 17:00-19:00; use actual prices rather than hard-coding this wind
 ## Collector decisions
 
 - Separate project and dedicated collector first; keep the limiter unchanged.
-- Use ConfigManager; prepare against version 4.2.2 used by the limiter.
+- Initial scaffold used ConfigManager 4.2.2; current smoke runtime uses the reviewed local 4.5.0 development checkout after the separate CM gate.
 - No display, external GPIO functions, wired sensors, relays, or RS485 control.
 - Built-in LED only: requested future indication of successful MQTT sends,
   nonblocking; do not copy unrelated WiFi/AP/status blinking patterns.
 - Copy local WiFi/MQTT credentials from the limiter without printing them.
 - Give this device its own application name and MQTT root: SolarBatteryTelemetry.
-- The owner will choose and update a free static IP before any upload.
+- The owner reserved static IPv4 192.168.2.124 for this collector; local DHCP default is false. Actual unit/port and upload authorization remain pending.
 - Keep credentials, governance, Serena, ProjectAtlas, and editor/generated state
   outside Git. The initial checkpoint was local only. On 2026-10-15 the owner
   authorized integrating all reviewed product changes into main and publishing
   `vitalyruhl/SolarBatteryTelemetry` as a private GitHub repository. Credentials,
   screenshots, governance, and tool state remain excluded. Public visibility
-  requires a separate owner decision; telemetry implementation is still pending.
+  requires a separate owner decision; full device telemetry implementation is still pending.
 
 ## Research findings, not implementation commitments
 
@@ -120,7 +134,7 @@ References consulted during brainstorming:
 - https://emhass.readthedocs.io/en/latest/main_core_concepts.html
 - https://www.victronenergy.com/solar-charge-controllers/smartsolar-150-35
 
-## Information needed before implementation
+## Information needed before device telemetry or physical acceptance
 
 1. Battery model/chemistry and confirmed BMS vendor/read protocol. The observed
    model string, firmware, app, and readings are recorded below; validate BLE
@@ -132,7 +146,7 @@ References consulted during brainstorming:
    WiFi reception, and Bluetooth reception near both devices.
 5. MQTT schema, units, timestamps, freshness/availability, discovery strategy,
    update intervals, and handling of reconnects or missing readings.
-6. Owner-selected static IP and explicit approval of the implementation plan.
+6. Static IP 192.168.2.124 and this limited smoke stage are approved; named hardware operations and full device telemetry need their later acceptance gates.
 
 ## Screenshot evidence recorded on 2026-10-15
 
@@ -206,12 +220,14 @@ open "Open Config" and capture the dialog to identify the saved configuration
 and any export option. "BMS write" is unrelated to locating a backup and is
 outside the read-only collector scope.
 
-This update records evidence only. Firmware implementation, device settings,
-and hardware communication remain outside the approved preparation checkpoint.
+The screenshots recorded evidence only at the initial preparation checkpoint.
+The later approved 0.2.0 runtime extends software preparation as described above;
+device settings and hardware communication remain outside its authorization.
 
-## Next stage after owner review
+## Next stage after smoke build review
 
-Confirm device protocols, design read-only adapters and telemetry contracts,
-agree on an implementation plan, implement and build, then request a separate
-hardware acceptance step. No control commands to the BMS, charger, or inverter
+Perform separately authorized named-unit smoke acceptance, then confirm device
+protocols and implement the approved read-only adapters/telemetry contracts in a
+later scope. The existing broad BLE design/plan is retained as planning context;
+this smoke change does not claim those complete-collector tasks are implemented. No control commands to the BMS, charger, or inverter
 are part of the collector's current scope.
