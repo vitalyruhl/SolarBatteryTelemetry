@@ -1,0 +1,33 @@
+# Local credentials and network configuration
+.env
+.env.*
+!.env.example
+/src/secret/secrets.h
+/platformio.local.ini
+/settings.local.h
+
+# Local governance and agent tooling (never versioned)
+/AGENTS.md
+/.github/
+/.agents/
+/.codex/
+/.serena/
+/.projectatlas/
+/.claude/
+/.mcp.json
+/CLAUDE.md
+/GEMINI.md
+/.local/
+/.vscode/
+/.idea/
+/*.code-workspace
+/.clangd
+
+# Generated build, analysis, and runtime state
+/.pio/
+/compile_commands.json
+**/__pycache__/
+*.pyc
+*.log
+node_modules/
+/.cache/
