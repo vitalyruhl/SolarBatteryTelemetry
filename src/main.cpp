@@ -4,28 +4,46 @@
 #include <core/CoreSettings.h>
 #include <core/CoreWiFiServices.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
+#include <WiFi.h>
 #include "settings.h"
 #include "smoke/SmokePolicy.h"
+#include "telemetry/MqttService.h"
+#include "victron/VictronReadout.h"
+#include "bms/BmsReadout.h"
 
 static cm::BluetoothManager bluetooth;
+static telemetry::MqttService telemetryMqtt;
+static victron::Readout victronReadout(VICTRON_READOUT_MAC,VICTRON_READOUT_KEY);
+static bms::Readout bmsReadout(BMS_READOUT_MAC);
 static auto& core=cm::CoreSettings::instance();
 static auto& wifiSettings=core.wifi;
 static auto& systemSettings=core.system;
 static cm::CoreWiFiServices wifiServices;
+static bool appReady=false;
 static bool bleWorkerReady=false; // Written before web-server startup, then immutable.
 
-static void attachSystemSettings() {
-    // Seed the existing OTA password's default before registration/loadAll.
-    // Persisted UI edits, including an intentionally empty password, win on later boots.
-    systemSettings.otaPassword=Config<String>(ConfigOptions<String>{
-        .key="OTAPass", .name="OTA Password", .category=cm::CoreCategories::System,
-        .defaultValue=String(OTA_PASSWORD), .showInWeb=true, .isPassword=true, .sortOrder=2});
+// Keep recovery diagnostics independent of HTTP/JSON and omit all credentials.
+static void printHealth(const char* stage) {
+    Serial.printf("[D] %s ms=%lu heap=%u min=%u largest=%u wifi=%d rssi=%d\n",
+        stage, static_cast<unsigned long>(millis()), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+        static_cast<int>(WiFi.status()), WiFi.isConnected() ? WiFi.RSSI() : 0);
+}
+
+static bool attachSystemSettings() {
+    // Reuse CM's original object. Provision only a genuinely missing NVS value.
+    Preferences prefs;
+    if (!prefs.begin("ConfigManager", false)) return false;
+    const bool initialized=sbt::initializeSettingIfMissing(prefs, systemSettings.otaPassword, String(OTA_PASSWORD));
+    prefs.end();
+    if (!initialized) return false;
     ConfigManager.setCategoryLayoutOverride(cm::CoreCategories::System,cm::CoreCategories::System,
         cm::CoreCategories::System,"System Settings",20);
     ConfigManager.addSettingsPage(cm::CoreCategories::System,20);
     ConfigManager.addSettingsGroup(cm::CoreCategories::System,cm::CoreCategories::System,"System Settings",20);
-    ConfigManager.addSetting(&systemSettings.allowOTA);
-    ConfigManager.addSetting(&systemSettings.otaPassword);
+    return ConfigManager.addSetting(&systemSettings.allowOTA) &&
+        ConfigManager.addSetting(&systemSettings.otaPassword);
 }
 
 static void setupNetworkDefaults() {
@@ -57,7 +75,7 @@ static void attachSmokeRuntime() {
     ConfigManager.addLiveCard("Bluetooth","Transport",40);
     ConfigManager.addLiveGroup("Bluetooth","Transport","Smoke test",40);
     ConfigManager.getRuntime().addRuntimeProvider("smoke",[](JsonObject& data) {
-        data["scope"]="WiFi/UI/OTA + BLE worker only; peers missing";
+        data["scope"]="WiFi/UI/OTA + Victron and JBD BMS readout";
         data["workerReady"]=bleWorkerReady;
         data["resetReason"]=static_cast<int>(esp_reset_reason());
     },5);
@@ -80,41 +98,71 @@ void setup() {
     ConfigManager.setAppTitle(APP_NAME);
     ConfigManager.setVersion(APP_VERSION);
     ConfigManager.setSettingsPassword(SETTINGS_PASSWORD);
-    ConfigManager.enableBuiltinSystemProvider();
-    core.attachWiFi(ConfigManager,"WLAN","WLAN-Einstellungen",10);
-    attachSystemSettings();
+    // Keep the live dashboard focused on collector sources; serial health remains available.
+    core.attachWiFi(ConfigManager,"Wi-Fi","Wi-Fi Settings",10);
+    if(!attachSystemSettings()){Serial.println("[E] System settings initialization failed");return;}
     core.attachNtp(ConfigManager);
     bluetooth.attach(ConfigManager);
     attachSmokeRuntime();
+    if(!victronReadout.attach(ConfigManager,bluetooth)){Serial.println("[E] Victron settings initialization failed");return;}
+    if(!telemetryMqtt.attach(ConfigManager,MY_MQTT_BROKER_IP,MY_MQTT_BROKER_PORT,MY_MQTT_USERNAME,MY_MQTT_PASSWORD,SMOKE_LOCAL_SECRETS)){
+        Serial.println("[E] MQTT settings initialization failed");return;
+    }
+    if(!bmsReadout.attach(ConfigManager,bluetooth)){Serial.println("[E] BMS settings initialization failed");return;}
+    bluetooth.setEventHandler([](const cm::BleEvent& event){victronReadout.onEvent(event);bmsReadout.onEvent(event);});
     ConfigManager.getOTAManager().setLifecycleObserver([](const OtaLifecycleEvent& event) {
+        telemetryMqtt.pauseForOta(event.stage==OtaStage::Starting||event.stage==OtaStage::Succeeded);
         if(event.stage==OtaStage::Starting || event.stage==OtaStage::Succeeded)
             bluetooth.requestPause(cm::BlePauseReason::Ota);
         else
             bluetooth.requestResume(cm::BlePauseReason::Ota);
     });
     ConfigManager.loadAll();
+    telemetryMqtt.afterLoad();
+    victronReadout.afterLoad();
+    bmsReadout.afterLoad();
+    Preferences readoutPrefs;
+    if(!readoutPrefs.begin("ConfigManager",false)){Serial.println("[E] Readout initialization failed");return;}
+    const bool readoutReady=sbt::enableReadoutBluetoothOnce(readoutPrefs,bluetooth.settings().enabled,victronReadout.configured()||bmsReadout.configured());
+    readoutPrefs.end();
+    if(!readoutReady){Serial.println("[E] Readout initialization failed");return;}
     setupNetworkDefaults();
 #if defined(WIFI_FILTER_MAC_PRIORITY)
     ConfigManager.setAccessPointMacPriority(WIFI_FILTER_MAC_PRIORITY);
 #endif
-    // No guessed peer/profile: the optional transport remains Disabled/Idle.
+    // SmartSolar uses passive advertisements; JBD uses read-only GATT queries.
     // Do not initialize NimBLE separately; the CM worker owns its first radio operation.
+    printHealth("before-ble");
     bleWorkerReady=bluetooth.begin();
     if(!bleWorkerReady)Serial.println("[W] BLE worker unavailable; WiFi/UI/OTA remain available");
     ConfigManager.startWebServer();
-    Serial.printf("[I] Smoke runtime %s, reset=%d; device telemetry inactive\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
+    printHealth("server-started");
+    appReady=true;
+    Serial.printf("[I] Collector runtime %s, reset=%d; passive Victron readout\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
 }
 
 void loop() {
+    if(!appReady){delay(100);return;}
     ConfigManager.getWiFiManager().update();
     ConfigManager.handleClient();
-    bluetooth.loop(millis());
+    const uint32_t now=millis();
+    victronReadout.loop(now);
+    bmsReadout.loop(now);
+    bluetooth.loop(now);
+    const auto sample=victronReadout.snapshot();
+    telemetryMqtt.updateVictron(sample.values,sample.available);
+    const auto battery=bmsReadout.snapshot();
+    telemetryMqtt.updateBms(battery.values.data(),battery.available);
+    telemetryMqtt.loop(now);
+    static uint32_t lastHealth=0;
+    if(uint32_t(now-lastHealth)>=5000){lastHealth=now;printHealth("loop-alive");}
     delay(1);
 }
 
 void onWiFiConnected() {
     wifiServices.onConnected(ConfigManager,APP_NAME,systemSettings,core.ntp);
     Serial.println("[I] WiFi ready; UI/OTA available");
+    printHealth("wifi-ready");
 }
-void onWiFiDisconnected() {wifiServices.onDisconnected();}
-void onWiFiAPMode() {wifiServices.onAPMode();}
+void onWiFiDisconnected() {printHealth("wifi-disconnected");wifiServices.onDisconnected();}
+void onWiFiAPMode() {printHealth("wifi-ap-mode");wifiServices.onAPMode();}

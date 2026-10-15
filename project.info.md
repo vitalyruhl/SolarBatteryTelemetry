@@ -1,7 +1,9 @@
 # SolarBatteryTelemetry - Project Information
 
 Date: 2026-10-15 (Europe/Berlin)
-Status: 0.2.0 flashed over USB; owner reports basic operation without an observed crash in the initial short test. OTA, BLE-radio and long-duration acceptance remain pending.
+Current checkpoint: JBD BMS and passive SmartSolar readout are implemented, installed and confirmed by the owner. Firmware remains 0.3.0 by request. The build uses local CM 4.6.0 with still-uncommitted BMS transport additions; see readme.md for the explicit reproduction limitation.
+
+Historical installed checkpoint: the earlier 0.3.0 MQTT/channel preparation evidence is retained in docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md. Current bounded device acceptance is in docs/BMS.md.
 
 ## Purpose and approved scope
 
@@ -13,7 +15,7 @@ Assistant. Use the owner's ESP32 Configuration Manager for runtime settings.
 The initial checkpoint created the folder, PlatformIO scaffold, local tooling and
 this decision record; it was reviewed and published privately. On 2026-10-15 the
 owner separately approved the ConfigManager BLE/OTA foundation and, after its
-software gate passed, this limited collector smoke runtime. Current scope is
+software gate passed, this limited collector smoke runtime. That 0.2.0 scope was
 WiFi/UI/OTA using the limiter's standard groups/lifecycle plus optional BLE worker
 Disabled/Idle diagnostics. It supplies no peers, device adapters, measurements,
 MQTT telemetry or LED behavior. The owner subsequently authorized USB flashing
@@ -22,13 +24,23 @@ The detected ESP32-D0WD-V3 has 4 MB flash. Application/bootstrap upload hashes
 passed; the owner reports basic operation without an observed crash. This does
 not establish OTA, RF, telemetry or long-duration stability.
 
-Current app version is 0.2.0. The exact reviewed local ConfigManager 4.5.0 checkout
+The current working tree retains version 0.3.0 as requested. MQTT UI settings use
+unique application keys with non-destructive migration from legacy keys. OTA uses
+the existing setting with missing-only provisioning. The newly authorized Victron
+adapter reads passive encrypted Solar Charger advertisements from the confirmed
+SmartSolar model; MAC and key are editable, and supported values feed MQTT.
+The JBD BMS adapter is implemented on feature/jbd-bms-readout; hardware acceptance is recorded in docs/BMS.md. Unknown, unsupported and stale values stay null.
+Both charge/discharge control paths remain disabled and read-only.
+
+The reviewed local ConfigManager 4.6.0 development checkout
 is an ignored absolute dependency override, not a claimed registry release;
-NimBLE-Arduino 2.5.1 is consumer-owned. The owner reserved 192.168.2.124; local
+NimBLE-Arduino 2.5.1 is consumer-owned. The owner moved the reserved address to 192.168.2.21; local
 network/OTA defaults match the limiter except this unique address/app identity.
 Valid persisted UI settings remain authoritative after initial provisioning.
-With no verified peers, even enabled BLE stays worker-idle without initializing
-the radio. See docs/ble-smoke-test.md for software scope and manual prerequisites.
+When valid Victron or BMS configuration is present, the first readout upgrade enables
+Bluetooth once, then honors future user disables. See docs/Victron.md for the
+passive receive path and remaining hardware acceptance; older smoke evidence is
+retained in docs/ble-smoke-test.md.
 
 ## Hardware and reported installation
 
@@ -41,16 +53,18 @@ the radio. See docs/ble-smoke-test.md for software scope and manual prerequisite
 - Owner enabled broadcast-style Bluetooth readout on the charger. Its temporary
   connection PIN is not recorded here. An Instant Readout encryption key, if
   applicable, is distinct from the connection PIN and must remain local.
-- The battery is visible over Bluetooth and readable in its BMS app. Actual
-  broadcast telemetry versus active polling has not been established.
+- The battery is visible over Bluetooth and readable in its BMS app. The implemented BMS adapter uses active, read-only BLE polling.
 - Devices are in the shed, outside Bluetooth range of the current workstation.
 - Existing inverter: unbranded RS485-controlled unit, already controlled by
   SolarInverterLimiter; owner reports a 900 W maximum in battery mode.
 - Photo displayed `1200W-PV: 55-90V TO AC220`, `PV Limit`, and 51.2 V DC.
   These are display observations, not confirmation of battery mode or a battery
   specification. Do not infer a specific inverter model from appearance.
-- Collector board provisionally uses the limiter's `nodemcu-32s` build target;
-  actual ESP32 board, flash capacity, LED pin, and polarity remain to be checked.
+- Collector on COM11: owner identifies NodeMCU ESP-32S v1.1; esptool confirms
+  ESP32-D0WD-V3 revision3.1, 4 MB flash, MAC88:57:21:8f:66:4c. The build target
+  remains `nodemcu-32s`. LED pin and polarity remain unverified.
+- Owner also has a UICPAL ESP32-S3-N16R8 and ESP32-C3 Super Mini V1601 available.
+  Neither spare was probed or flashed; no board migration is part of this stage.
 
 ## Existing limiter baseline (owner-reported)
 
@@ -231,3 +245,7 @@ protocols and implement the approved read-only adapters/telemetry contracts in a
 later scope. The existing broad BLE design/plan is retained as planning context;
 this smoke change does not claim those complete-collector tasks are implemented. No control commands to the BMS, charger, or inverter
 are part of the collector's current scope.
+
+### JBD integration checkpoint
+
+The owner supplied the Powerwall BLE identity. Its address is kept in ignored local defaults and an editable setting. The implementation reads JBD basic and 14-cell frames through the shared CM worker; no configuration or control writes are enabled. The new firmware has passed focused host tests and USB-profile compilation. Live device acceptance is tracked separately in docs/BMS.md.
