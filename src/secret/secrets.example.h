@@ -27,3 +27,7 @@
 
 // dev-Station
 #define WIFI_FILTER_MAC_PRIORITY ""
+
+// VictronConnect Instant Readout: Bluetooth MAC and 16-byte key (32 hex digits).
+#define VICTRON_READOUT_MAC ""
+#define VICTRON_READOUT_KEY ""

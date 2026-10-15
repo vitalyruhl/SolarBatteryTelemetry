@@ -1,6 +1,6 @@
 #pragma once
 
-// WiFi/UI/OTA, BLE worker and read-only MQTT channel preparation.
+// WiFi/UI/OTA, passive Victron Instant Readout and read-only MQTT telemetry.
 #define APP_VERSION "0.3.0"
 #define VERSION_DATE "2026-10-15"
 
@@ -10,4 +10,12 @@
 #else
 #include "secret/secrets.example.h"
 #define SMOKE_LOCAL_SECRETS 0
+#endif
+
+// Optional on existing local secret files; empty values leave readout unconfigured.
+#ifndef VICTRON_READOUT_MAC
+#define VICTRON_READOUT_MAC ""
+#endif
+#ifndef VICTRON_READOUT_KEY
+#define VICTRON_READOUT_KEY ""
 #endif

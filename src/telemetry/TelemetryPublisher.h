@@ -13,12 +13,17 @@ class Publisher {
  char root_[rootLimit+1]="SolarBatteryTelemetry";
  char desired_[rootLimit+1]="SolarBatteryTelemetry";
  char retiring_[rootLimit+1]{};
- Value latest_[channelCount]{},snapshot_[channelCount]{};
+ Value latest_[channelCount]{},snapshot_[channelCount]{},lastSent_[channelCount]{};
+ static_assert(channelCount<=32,"The fixed field cache uses one bit per channel");
+ uint32_t sentFields_=0;
+ uint8_t sentMetadata_=0;
+ bool sourceAvailable_[2]{},snapshotAvailable_[2]{};
  std::size_t cursor_=0,retireCursor_=0;
  uint32_t completedAt_=0,retryAt_=0;
  bool pending_=true,delivered_=false,retry_=false,paused_=false,rejected_=false,advertised_=false;
  uint32_t intervalMs_=5000;
- void resetCycle(){pending_=true;cursor_=0;retry_=false;delivered_=false;std::memcpy(snapshot_,latest_,sizeof(latest_));}
+ void resetCycle(){pending_=true;cursor_=0;delivered_=false;std::memcpy(snapshot_,latest_,sizeof(latest_));std::memcpy(snapshotAvailable_,sourceAvailable_,sizeof(sourceAvailable_));}
+ void clearSent(){sentFields_=0;sentMetadata_=0;}
  bool publishOne(Transport& wire,const char* root,const char* suffix,const char* value,bool retain) {
   char topic[topicLimit+1];return buildTopic(root,suffix,topic,sizeof(topic))&&wire.publish(topic,value,retain);
  }
@@ -41,7 +46,18 @@ public:
  bool delivered() const{return delivered_;}
  void setPaused(bool paused){paused_=paused;}
  void setValue(std::size_t i,Value value){if(i<channelCount)latest_[i]=value;}
- void onConnected(){advertised_=true;resetCycle();}
+ void setSourceAvailable(Source source,bool available){
+  const auto index=source==Source::Bms?0:1;
+  if(sourceAvailable_[index]==available)return;
+  sourceAvailable_[index]=available;
+  sentMetadata_&=static_cast<uint8_t>(~((1u<<index)|(1u<<4)));
+  for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==source){
+   sentFields_&=~(uint32_t{1}<<i);
+   if(!available)latest_[i]=Value{};
+  }
+  resetCycle();
+ }
+ void onConnected(){advertised_=true;clearSent();retry_=false;resetCycle();}
  void setInterval(uint32_t ms){intervalMs_=ms<5000?5000:ms;}
  // Configuration disable/reconnect uses the same bounded retirement path.
  bool retireCurrent(Transport& wire) {
@@ -66,23 +82,41 @@ public:
     if(wire.connected()&&!retire(wire)){retry_=true;retryAt_=now;return;}
    }
    wire.disconnect();std::memcpy(root_,desired_,sizeof(root_));advertised_=false;
-   wire.configure(root_);resetCycle();return;
+   wire.configure(root_);clearSent();resetCycle();return;
   }
   if(!wire.connected())return;
   if(retiring_[0]&&!retire(wire)){retry_=true;retryAt_=now;return;}
   if(!pending_&&static_cast<uint32_t>(now-completedAt_)<intervalMs_)return;
-  if(!pending_){pending_=true;cursor_=0;std::memcpy(snapshot_,latest_,sizeof(latest_));}
-  // Four normal admissions; a prior-root cleanup adds at most three. No sample history.
+  if(!pending_)resetCycle();
+  // Four bounded cursor steps (at most four admissions). Skips never allocate or send.
+  // Keep successful values only; failed admissions retain this snapshot and retry cursor.
   for(unsigned budget=0;budget<4&&cursor_<channelCount+5;++budget) {
-   bool ok=false;char payload[payloadLimit+1];
-   if(cursor_==0)ok=publishOne(wire,root_,"bms/availability","unavailable",true);
-   else if(cursor_==1)ok=publishOne(wire,root_,"victron/availability","unavailable",true);
-   else if(cursor_==2)ok=publishOne(wire,root_,"bms/control/availability","disabled",true);
-   else if(cursor_==3)ok=publishOne(wire,root_,"status","online",true);
-   else if(cursor_==4)ok=capabilities(root_,payload,sizeof(payload))&&publishOne(wire,root_,"capabilities",payload,true);
-   else {const auto i=cursor_-5;ok=formatValue(channels[i],snapshot_[i],payload,sizeof(payload))&&publishOne(wire,root_,channels[i].suffix,payload,false);}
+   bool ok=false;
+   if(cursor_<5) {
+    const auto bit=static_cast<uint8_t>(1u<<cursor_);
+    if(sentMetadata_&bit){++cursor_;continue;}
+    if(cursor_==0)ok=publishOne(wire,root_,"bms/availability",snapshotAvailable_[0]?"available":"unavailable",true);
+    else if(cursor_==1)ok=publishOne(wire,root_,"victron/availability",snapshotAvailable_[1]?"available":"unavailable",true);
+    else if(cursor_==2)ok=publishOne(wire,root_,"bms/control/availability","disabled",true);
+    else if(cursor_==3)ok=publishOne(wire,root_,"status","online",true);
+    else {char payload[payloadLimit+1];ok=capabilities(root_,payload,sizeof(payload),snapshotAvailable_[1])&&publishOne(wire,root_,"capabilities",payload,true);}
+    if(ok){sentMetadata_|=bit;if(cursor_==3)advertised_=true;}
+   } else {
+    const auto i=cursor_-5;
+    const auto bit=uint32_t{1}<<i;
+    if(!snapshotAvailable_[channels[i].source==Source::Bms?0:1]){++cursor_;continue;}
+    // Scalar wire forms fit 32 bytes; comparing serialization avoids double noise.
+    char payload[32],previous[32];
+    if(formatValue(channels[i],snapshot_[i],payload,sizeof(payload))) {
+     if(!(sentFields_&bit)) {
+      // No initial unknown/unsupported field burst; availability carries source loss.
+      if(std::strcmp(payload,"null")==0){++cursor_;continue;}
+     } else if(formatValue(channels[i],lastSent_[i],previous,sizeof(previous))&&std::strcmp(payload,previous)==0){++cursor_;continue;}
+     ok=publishOne(wire,root_,channels[i].suffix,payload,false);
+     if(ok){lastSent_[i]=snapshot_[i];sentFields_|=bit;}
+    }
+   }
    if(!ok){retry_=true;retryAt_=now;return;}
-   if(cursor_==3)advertised_=true; // A successful online publication creates a new retirement duty.
    ++cursor_;
   }
   if(cursor_==channelCount+5){pending_=false;delivered_=true;completedAt_=now;}

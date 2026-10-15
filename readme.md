@@ -1,17 +1,22 @@
 # SolarBatteryTelemetry
 
-Version **0.3.0** prepares a dedicated ESP32 with WiFi/UI/OTA, an optional BLE
-worker and working MQTT connectivity plus all 25 fixed BMS/Victron telemetry
-channels. Device adapters are absent: values are null, source availability is
-unavailable and controls remain disabled. The editable default root is
-`SolarBatteryTelemetry`. See [the MQTT contract](docs/MQTT.md) for channel types,
-limits, root transitions, settings ownership and acceptance boundaries.
+The current **0.3.0 working tree** adds passive Victron SmartSolar Instant Readout
+and repairs MQTT/OTA settings registration while retaining the existing CM 4.5.0
+dependency and the owner's requested version. The installed 0.3.0 checkpoint is
+historical; the additions below are not claimed to have been uploaded or verified
+on the charger yet.
 
-The local reserved static IPv4 is **192.168.2.124**; credentials remain ignored.
-BluetoothEnable defaults off. Without verified peers it remains Disabled/Idle,
-without scanning, connecting or initializing NimBLE. There are no battery/charger
-writes, decoder, Home Assistant discovery, activity LED, display, external GPIO,
-RS485 or inverter behavior. SolarInverterLimiter is unchanged.
+Seven direct SmartSolar readings can populate the fixed 25-channel MQTT contract.
+BMS data remains unavailable; unsupported PV voltage/current and deferred derived
+battery power stay null. Controls remain disabled. The editable default root is
+`SolarBatteryTelemetry`. See [MQTT](docs/MQTT.md) and [Victron](docs/Victron.md).
+
+The local reserved static IPv4 is **192.168.2.21**; credentials remain ignored.
+Set `VICTRON_READOUT_MAC` and `VICTRON_READOUT_KEY` in the ignored secret header
+for first-boot defaults, or edit Bluetooth / Victron / Instant Readout in Settings.
+On the first configured readout upgrade, a persistent migration enables Bluetooth
+once; a later explicit user disable survives reboot. Readout is passive: no GATT
+connection, battery/charger writes, external GPIO or inverter behavior is added.
 
 ## Development dependency and local setup
 
@@ -35,6 +40,8 @@ default, not a password overwrite on every boot.
 
 ```powershell
 ./tools/test/run-smoke-host-tests.ps1
+python tools/test/run-settings-registration-tests.py
+./tools/test/run-victron-host-tests.ps1
 pio run -e usb -e ota
 ```
 

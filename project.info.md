@@ -1,7 +1,9 @@
 # SolarBatteryTelemetry - Project Information
 
 Date: 2026-10-15 (Europe/Berlin)
-Status: 0.3.0 MQTT/channel preparation passed focused host tests, independent review and USB/OTA builds, then was installed on COM11 with all upload hashes verified. Live MQTT delivery, a complete OTA transfer and BLE-device acceptance remain unverified. See docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md.
+Working tree: the owner authorized fixing duplicate MQTT/OTA settings keys and connecting the configured SmartSolar Instant Readout MAC/key as editable settings. The original CM 4.5.0 dependency and app version 0.3.0 are retained. New hardware/OTA acceptance remains pending.
+
+Installed checkpoint: 0.3.0 MQTT/channel preparation passed focused host tests, independent review and USB/OTA builds, then was installed on COM11 with all upload hashes verified. Live MQTT delivery, a complete OTA transfer and BLE-device acceptance remain unverified. See docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md.
 
 ## Purpose and approved scope
 
@@ -22,19 +24,23 @@ The detected ESP32-D0WD-V3 has 4 MB flash. Application/bootstrap upload hashes
 passed; the owner reports basic operation without an observed crash. This does
 not establish OTA, RF, telemetry or long-duration stability.
 
-Current app version is 0.3.0. The owner authorized working MQTT connectivity,
-an editable base topic and all 25 fixed telemetry/status channels, with actual
-JBD/Victron decoding deferred. Unknown values remain unavailable/null; both
-charge/discharge control paths are metadata-only and read-only. See docs/MQTT.md.
-The prior 0.2.0 scope above is retained as historical smoke evidence.
+The current working tree retains version 0.3.0 as requested. MQTT UI settings use
+unique application keys with non-destructive migration from legacy keys. OTA uses
+the existing setting with missing-only provisioning. The newly authorized Victron
+adapter reads passive encrypted Solar Charger advertisements from the confirmed
+SmartSolar model; MAC and key are editable, and supported values feed MQTT.
+BMS decoding remains deferred. Unknown, unsupported and stale values stay null.
+Both charge/discharge control paths remain disabled and read-only.
 
 The reviewed local ConfigManager 4.5.0 checkout
 is an ignored absolute dependency override, not a claimed registry release;
-NimBLE-Arduino 2.5.1 is consumer-owned. The owner reserved 192.168.2.124; local
+NimBLE-Arduino 2.5.1 is consumer-owned. The owner moved the reserved address to 192.168.2.21; local
 network/OTA defaults match the limiter except this unique address/app identity.
 Valid persisted UI settings remain authoritative after initial provisioning.
-With no verified peers, even enabled BLE stays worker-idle without initializing
-the radio. See docs/ble-smoke-test.md for software scope and manual prerequisites.
+When valid Victron configuration is present, the first readout upgrade enables
+Bluetooth once, then honors future user disables. See docs/Victron.md for the
+passive receive path and remaining hardware acceptance; older smoke evidence is
+retained in docs/ble-smoke-test.md.
 
 ## Hardware and reported installation
 
