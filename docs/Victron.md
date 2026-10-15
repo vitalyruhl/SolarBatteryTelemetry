@@ -22,7 +22,7 @@ provide defaults only when the corresponding NVS settings do not exist.
 Persisted edits, including empty values, remain authoritative. Configuration
 callbacks only update bounded mailboxes; the application loop reconfigures the
 existing BLE worker and invalidates old samples. No second BLE stack or scanner
-is started. Missing configuration pauses this collector's BLE work.
+is started. Missing Victron configuration removes only its advertisement peer; an independently configured BMS remains active.
 
 ## Measurements and freshness
 

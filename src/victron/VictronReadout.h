@@ -58,7 +58,7 @@ public:
         manager.addToSettingsGroup(key_.getKey(),"Bluetooth","Victron","Instant Readout",2);
         mac_.setCallback([this](const String& value){mailbox_.setMac(value.c_str(),value.length());});
         key_.setCallback([this](const String& value){mailbox_.setKey(value.c_str(),value.length());});
-        bluetooth_=&bluetooth;bluetooth.setEventHandler([this](const cm::BleEvent& event){receive(event);});
+        bluetooth_=&bluetooth;
         manager.getRuntime().addRuntimeProvider("victron",[this](JsonObject& data){
             const auto copy=snapshot();data["availability"]=copy.available?"available":"unavailable";data["reason"]=copy.reason;
             for(std::size_t i=0;i<telemetry::channelCount;++i){const auto& channel=telemetry::channels[i];
@@ -84,12 +84,12 @@ public:
                 cm::BleAddress address{};std::memcpy(address.text,active_.mac,sizeof(address.text));
                 // SmartSolar Instant Readout uses a random static BLE address, not a GATT connection.
                 address.type=1;
-                if(bluetooth_->configureAdvertisementPeer(address))bluetooth_->requestResume(cm::BlePauseReason::Configuration);
-                else {active_.macValid=false;receiver_.reset("peer_configuration_failed");bluetooth_->requestPause(cm::BlePauseReason::Configuration);}
-            }else bluetooth_->requestPause(cm::BlePauseReason::Configuration);
+                if(!bluetooth_->configureAdvertisementPeer(address)){active_.macValid=false;receiver_.reset("peer_configuration_failed");bluetooth_->clearAdvertisementPeer();}
+            }else bluetooth_->clearAdvertisementPeer();
         }
         updateView(now);
     }
+    void onEvent(const cm::BleEvent& event){receive(event);}
     // Application-loop/startup access only; UI readers use snapshot().
     bool configured() const{return active_.ready();}
     Snapshot snapshot() const{std::lock_guard<std::mutex> lock(viewMutex_);return view_;}

@@ -68,7 +68,7 @@ public:
   }
   cm.getRuntime().addRuntimeProvider("telemetry",[this](JsonObject& data){
    View v;{std::lock_guard<std::mutex> guard(viewMutex_);v=view_;}
-   data["scope"]="Victron Instant Readout; BMS adapter missing; read-only";data["root"]=String(v.root);
+   data["scope"]="Victron Instant Readout and JBD BMS; read-only";data["root"]=String(v.root);
    data["connection"]=v.connected?"online":"offline";data["enabled"]=v.enabled?"enabled":"disabled";
    data["rootValidation"]=v.rejected?"rejected; last valid configuration retained":"valid";
    data["snapshot"]=v.delivered?"locally sent (QoS0)":"pending";
@@ -80,11 +80,6 @@ public:
   field(cm,"telemetry","rootValidation","Configuration validation",5);field(cm,"telemetry","snapshot","Latest snapshot",6);field(cm,"telemetry","ota","MQTT OTA pause",7);field(cm,"telemetry","retirement","Retained status cleanup",8);
   for(Source source:{Source::Bms,Source::Victron}) {
    const char* name=sourceName(source);
-   if(source==Source::Bms)cm.getRuntime().addRuntimeProvider(name,[source](JsonObject& data){
-    data["availability"]="unavailable";data["reason"]="adapter_missing";
-    for(const auto& c:channels)if(c.source==source){const char* key=std::strchr(c.suffix,'/')+1;
-     data[key]="unavailable";data["types"][key]=typeName(c.type);data["support"][key]=supportName(c.support);}
-   },7);
    field(cm,name,"availability","Source availability",1,name);field(cm,name,"reason","Source reason",2,name);
   }
   int order=10;for(const auto& c:channels)field(cm,sourceName(c.source),std::strchr(c.suffix,'/')+1,c.label,order++,sourceName(c.source),c.unit);
@@ -93,6 +88,10 @@ public:
  // Called once after loadAll and before server/tasks. Config::load intentionally omits callbacks.
  void afterLoad(){captureInitial();}
  void pauseForOta(bool value){otaPaused_.store(value);}
+ void updateBms(const Value* values,bool available){
+  for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Bms)publisher_.setValue(i,available?values[i]:Value{});
+  publisher_.setSourceAvailable(Source::Bms,available);
+ }
  void updateVictron(const Value* values,bool available){
   for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Victron)publisher_.setValue(i,available?values[i]:Value{});
   publisher_.setSourceAvailable(Source::Victron,available);

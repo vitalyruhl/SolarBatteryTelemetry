@@ -1,9 +1,9 @@
 # SolarBatteryTelemetry - Project Information
 
 Date: 2026-10-15 (Europe/Berlin)
-Working tree: the owner authorized fixing duplicate MQTT/OTA settings keys and connecting the configured SmartSolar Instant Readout MAC/key as editable settings. The original CM 4.5.0 dependency and app version 0.3.0 are retained. New hardware/OTA acceptance remains pending.
+Current checkpoint: JBD BMS and passive SmartSolar readout are implemented, installed and confirmed by the owner. Firmware remains 0.3.0 by request. The build uses local CM 4.6.0 with still-uncommitted BMS transport additions; see readme.md for the explicit reproduction limitation.
 
-Installed checkpoint: 0.3.0 MQTT/channel preparation passed focused host tests, independent review and USB/OTA builds, then was installed on COM11 with all upload hashes verified. Live MQTT delivery, a complete OTA transfer and BLE-device acceptance remain unverified. See docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md.
+Historical installed checkpoint: the earlier 0.3.0 MQTT/channel preparation evidence is retained in docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md. Current bounded device acceptance is in docs/BMS.md.
 
 ## Purpose and approved scope
 
@@ -29,15 +29,15 @@ unique application keys with non-destructive migration from legacy keys. OTA use
 the existing setting with missing-only provisioning. The newly authorized Victron
 adapter reads passive encrypted Solar Charger advertisements from the confirmed
 SmartSolar model; MAC and key are editable, and supported values feed MQTT.
-BMS decoding remains deferred. Unknown, unsupported and stale values stay null.
+The JBD BMS adapter is implemented on feature/jbd-bms-readout; hardware acceptance is recorded in docs/BMS.md. Unknown, unsupported and stale values stay null.
 Both charge/discharge control paths remain disabled and read-only.
 
-The reviewed local ConfigManager 4.5.0 checkout
+The reviewed local ConfigManager 4.6.0 development checkout
 is an ignored absolute dependency override, not a claimed registry release;
 NimBLE-Arduino 2.5.1 is consumer-owned. The owner moved the reserved address to 192.168.2.21; local
 network/OTA defaults match the limiter except this unique address/app identity.
 Valid persisted UI settings remain authoritative after initial provisioning.
-When valid Victron configuration is present, the first readout upgrade enables
+When valid Victron or BMS configuration is present, the first readout upgrade enables
 Bluetooth once, then honors future user disables. See docs/Victron.md for the
 passive receive path and remaining hardware acceptance; older smoke evidence is
 retained in docs/ble-smoke-test.md.
@@ -53,8 +53,7 @@ retained in docs/ble-smoke-test.md.
 - Owner enabled broadcast-style Bluetooth readout on the charger. Its temporary
   connection PIN is not recorded here. An Instant Readout encryption key, if
   applicable, is distinct from the connection PIN and must remain local.
-- The battery is visible over Bluetooth and readable in its BMS app. Actual
-  broadcast telemetry versus active polling has not been established.
+- The battery is visible over Bluetooth and readable in its BMS app. The implemented BMS adapter uses active, read-only BLE polling.
 - Devices are in the shed, outside Bluetooth range of the current workstation.
 - Existing inverter: unbranded RS485-controlled unit, already controlled by
   SolarInverterLimiter; owner reports a 900 W maximum in battery mode.
@@ -246,3 +245,7 @@ protocols and implement the approved read-only adapters/telemetry contracts in a
 later scope. The existing broad BLE design/plan is retained as planning context;
 this smoke change does not claim those complete-collector tasks are implemented. No control commands to the BMS, charger, or inverter
 are part of the collector's current scope.
+
+### JBD integration checkpoint
+
+The owner supplied the Powerwall BLE identity. Its address is kept in ignored local defaults and an editable setting. The implementation reads JBD basic and 14-cell frames through the shared CM worker; no configuration or control writes are enabled. The new firmware has passed focused host tests and USB-profile compilation. Live device acceptance is tracked separately in docs/BMS.md.

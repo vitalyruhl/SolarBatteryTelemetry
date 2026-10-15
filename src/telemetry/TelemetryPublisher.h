@@ -99,7 +99,7 @@ public:
     else if(cursor_==1)ok=publishOne(wire,root_,"victron/availability",snapshotAvailable_[1]?"available":"unavailable",true);
     else if(cursor_==2)ok=publishOne(wire,root_,"bms/control/availability","disabled",true);
     else if(cursor_==3)ok=publishOne(wire,root_,"status","online",true);
-    else {char payload[payloadLimit+1];ok=capabilities(root_,payload,sizeof(payload),snapshotAvailable_[1])&&publishOne(wire,root_,"capabilities",payload,true);}
+    else {char payload[payloadLimit+1];ok=capabilities(root_,payload,sizeof(payload),snapshotAvailable_[1],snapshotAvailable_[0])&&publishOne(wire,root_,"capabilities",payload,true);}
     if(ok){sentMetadata_|=bit;if(cursor_==3)advertised_=true;}
    } else {
     const auto i=cursor_-5;

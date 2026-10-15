@@ -62,6 +62,10 @@ int main() {
     assert(std::strstr(payload,"\"read_only\":true")&&std::strstr(payload,"\"commands_enabled\":false"));
     assert(std::strstr(payload,"equalization")&&std::strstr(payload,"pv_current_a"));
     assert(!capabilities("a",payload,16));
+    assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload),true,true));
+    assert(std::strstr(payload,"jbd_readout")&&std::strstr(payload,"\"source_state\":\"available\""));
+    assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload),false,true));
+    assert(std::strstr(payload,"victron_unavailable"));
     Wire w;Publisher p;assert(p.requestRoot("SolarBatteryTelemetry",21));p.onConnected();
     w.fail=true;drain(p,w,0);assert(w.sent.empty()&&!p.delivered());
     w.fail=false;drain(p,w,250);assert(p.delivered());

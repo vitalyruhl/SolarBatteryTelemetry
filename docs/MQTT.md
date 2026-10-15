@@ -1,6 +1,6 @@
 # MQTT preparation
 
-The current working firmware adds passive SmartSolar Instant Readout to the 25-channel MQTT contract. Seven direct Victron fields can contain decoded readings; BMS remains unavailable, PV voltage/current remain unsupported, and battery power remains deferred. No charge/discharge commands are enabled. See [Victron readout](Victron.md) for configuration, field limits and hardware acceptance.
+The current working firmware adds passive SmartSolar Instant Readout to the 25-channel MQTT contract. Seven direct Victron fields can contain decoded readings; BMS is supplied by the JBD readout adapter, PV voltage/current remain unsupported, and battery power remains deferred. No charge/discharge commands are enabled. See [Victron readout](Victron.md) for configuration, field limits and hardware acceptance.
 
 ## Settings and ownership
 
@@ -16,8 +16,8 @@ All 25 descriptors, labels, units, type/support names, state vocabulary and rese
 
 | Source | Leaf | Type | Unit / meaning |
 | --- | --- | --- | --- |
-| bms | charging | bool | Actual charging activity; unknown |
-| bms | discharging | bool | Actual discharging activity; unknown |
+| bms | charging | bool | Actual charging activity from positive current |
+| bms | discharging | bool | Actual discharging activity from negative current |
 | bms | state_of_charge_pct | real | BMS-reported % |
 | bms | voltage_v | real | V |
 | bms | current_a | real | A, net battery current |
@@ -30,7 +30,7 @@ All 25 descriptors, labels, units, type/support names, state vocabulary and rese
 | bms | cell_voltage_min_v | real | V |
 | bms | cell_voltage_max_v | real | V |
 | bms | cell_voltage_delta_v | real | V |
-| bms | alarm_bits | unsigned | Bitfield, unknown |
+| bms | alarm_bits | unsigned | Raw BMS protection bitfield |
 | victron | solar_power_w | real | W |
 | victron | pv_voltage_v | real | V; unsupported by selected Instant Readout Solar record |
 | victron | pv_current_a | real | A; unsupported by selected Instant Readout Solar record |
@@ -42,9 +42,9 @@ All 25 descriptors, labels, units, type/support names, state vocabulary and rese
 | victron | error_code | unsigned | Unknown |
 | victron | yield_today_wh | real | Wh |
 
-Topics are `<base>/<source>/<leaf>`. Both `<base>/bms/availability` and `<base>/victron/availability` publish their retained `available`/`unavailable` state before scalar data. BMS remains unavailable without its adapter; Victron availability follows the readout freshness check. Availability and capabilities are sent once per connection/root and on source availability changes. `<base>/bms/control/availability` is retained `disabled`. The retained `<base>/capabilities` JSON contains schema_version=1, read_only=true, commands_enabled=false, source state/reason (`partial`/`bms_adapter_missing` or `unavailable`/`no_fresh_data`), unsupported PV fields, deferred battery power, charge-state vocabulary and full reserved `<base>/bms/charge_enabled/set` and `<base>/bms/discharge_enabled/set` paths. They are metadata only: no subscriptions, message handlers, device writes or Home Assistant command discovery exist. Bulk means the main charging stage, not an alarm. Retained incoming commands cannot actuate anything in this firmware.
+Topics are `<base>/<source>/<leaf>`. Both `<base>/bms/availability` and `<base>/victron/availability` publish their retained `available`/`unavailable` state before scalar data. BMS availability follows complete JBD basic/cell cycles; Victron availability follows the readout freshness check. Availability and capabilities are sent once per connection/root and on source availability changes. `<base>/bms/control/availability` is retained `disabled`. The retained `<base>/capabilities` JSON contains schema_version=1, read_only=true, commands_enabled=false, source state/reason (`available`/`ok`, `partial`/`bms_unavailable` or `victron_unavailable`, or `unavailable`/`no_fresh_data`), unsupported PV fields, deferred battery power, charge-state vocabulary and full reserved `<base>/bms/charge_enabled/set` and `<base>/bms/discharge_enabled/set` paths. They are metadata only: no control subscriptions, control handlers, BMS configuration writes or Home Assistant command discovery exist. Bulk means the main charging stage, not an alarm. Retained incoming commands cannot actuate anything in this firmware.
 
-Values have explicit validity. Real values must be finite; unsigned values must be integral and within uint32 range; invalid booleans/enums are null. Unsupported and deferred fields serialize as null even if accidentally given a value, but initial unknown fields are not published. While a source stays available, a previously published valid field becoming invalid sends `null` once; valid zero remains `0` (or `false` for boolean fields). Source loss publishes availability/capabilities without a burst of null field messages. The future adapter must verify protocol mappings and freshness before it can establish source availability; the generic prepared publisher is not a protocol decoder.
+Values have explicit validity. Real values must be finite; unsigned values must be integral and within uint32 range; invalid booleans/enums are null. Unsupported and deferred fields serialize as null even if accidentally given a value, but initial unknown fields are not published. While a source stays available, a previously published valid field becoming invalid sends `null` once; valid zero remains `0` (or `false` for boolean fields). Source loss publishes availability/capabilities without a burst of null field messages. The JBD and Victron adapters establish source availability from validated, fresh protocol data.
 
 Home Assistant consumers should combine collector `<base>/status` and source `<base>/<source>/availability` for availability/freshness. Do not use a short `expire_after` based on the publish interval: unchanged values intentionally stay silent while the source is still fresh. Collector reconnect replays valid values; a newly subscribing consumer can otherwise wait until a value changes because telemetry itself is non-retained.
 
@@ -80,3 +80,5 @@ The final 0.3.0 USB/OTA images are each 1,328,448 bytes, leaving 506,560 bytes (
 ## Settings repair in the current working tree
 
 The existing `OTAPass` object is retained. The local OTA password is provisioned only if its NVS key is absent; an explicitly saved empty password is preserved. Initialization failures stop startup before web/radio services. Local upload authentication remains in ignored `platformio.local.ini`; firmware and upload passwords must match after a user changes the saved password. The local CM 4.5 checkout and the selected CM 4.6 comparison checkout both include the WiFi/Bluetooth coexistence repair that enables minimum modem sleep while both radios are active.
+
+See [JBD BMS readout](BMS.md) for configuration, freshness and protocol limits. BMS support is `jbd_readout`; capabilities report both source availabilities independently.

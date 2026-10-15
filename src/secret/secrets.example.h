@@ -31,3 +31,6 @@
 // VictronConnect Instant Readout: Bluetooth MAC and 16-byte key (32 hex digits).
 #define VICTRON_READOUT_MAC ""
 #define VICTRON_READOUT_KEY ""
+
+// Optional JBD BMS Bluetooth address; empty disables its readout.
+#define BMS_READOUT_MAC ""

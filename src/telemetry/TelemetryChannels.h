@@ -8,8 +8,8 @@ namespace telemetry {
 inline constexpr std::size_t rootLimit=63,topicLimit=128,payloadLimit=1024;
 enum class Source { Bms, Victron };
 enum class FieldType { Boolean, Real, Unsigned, State };
-enum class Support { PendingAdapter, Unsupported, DerivedLater, InstantReadout };
-struct Channel { Source source; FieldType type; const char* suffix; const char* label; const char* unit; Support support=Support::PendingAdapter; };
+enum class Support { PendingAdapter, Unsupported, DerivedLater, InstantReadout, JbdReadout };
+struct Channel { Source source; FieldType type; const char* suffix; const char* label; const char* unit; Support support=Support::JbdReadout; };
 inline constexpr Channel channels[]={
  {Source::Bms,FieldType::Boolean,"bms/charging","Charging",""},
  {Source::Bms,FieldType::Boolean,"bms/discharging","Discharging",""},
@@ -41,7 +41,7 @@ inline constexpr std::size_t channelCount=sizeof(channels)/sizeof(channels[0]);
 inline constexpr const char* chargeStates[]={"off","fault","bulk","absorption","float","storage","equalization","other","unavailable"};
 inline constexpr const char* commandSuffixes[]={"bms/charge_enabled/set","bms/discharge_enabled/set"};
 inline const char* sourceName(Source s){return s==Source::Bms?"bms":"victron";}
-inline const char* supportName(Support s){return s==Support::InstantReadout?"instant_readout":s==Support::Unsupported?"unsupported":s==Support::DerivedLater?"derived_later":"adapter_missing";}
+inline const char* supportName(Support s){return s==Support::JbdReadout?"jbd_readout":s==Support::InstantReadout?"instant_readout":s==Support::Unsupported?"unsupported":s==Support::DerivedLater?"derived_later":"adapter_missing";}
 inline const char* typeName(FieldType t){switch(t){case FieldType::Boolean:return "bool";case FieldType::Real:return "real";case FieldType::Unsigned:return "unsigned";case FieldType::State:return "enum";}return "unknown";}
 inline bool validRoot(const char* root,std::size_t n) {
  if(!root||!n||n>rootLimit||root[0]=='/'||root[n-1]=='/')return false;
@@ -75,12 +75,12 @@ inline bool formatValue(const Channel& c,Value v,char* out,std::size_t capacity)
  }
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
-inline bool capabilities(const char* root,char* out,std::size_t capacity,bool victronAvailable=false) {
+inline bool capabilities(const char* root,char* out,std::size_t capacity,bool victronAvailable=false,bool bmsAvailable=false) {
  char a[topicLimit+1],b[topicLimit+1];
  if(!buildTopic(root,commandSuffixes[0],a,sizeof(a))||!buildTopic(root,commandSuffixes[1],b,sizeof(b)))return false;
  const int n=std::snprintf(out,capacity,
-  "{\"schema_version\":1,\"read_only\":true,\"commands_enabled\":false,\"reserved_commands\":[\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"missing\",\"victron\":\"instant_readout\"},\"unsupported\":[\"victron/pv_voltage_v\",\"victron/pv_current_a\"],\"derived_later\":[\"victron/battery_power_w\"],\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
-  a,b,victronAvailable?"partial":"unavailable",victronAvailable?"bms_adapter_missing":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
+  "{\"schema_version\":1,\"read_only\":true,\"commands_enabled\":false,\"reserved_commands\":[\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"jbd_readout\",\"victron\":\"instant_readout\"},\"unsupported\":[\"victron/pv_voltage_v\",\"victron/pv_current_a\"],\"derived_later\":[\"victron/battery_power_w\"],\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
+  a,b,bmsAvailable&&victronAvailable?"available":bmsAvailable||victronAvailable?"partial":"unavailable",bmsAvailable&&victronAvailable?"ok":bmsAvailable?"victron_unavailable":victronAvailable?"bms_unavailable":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
 }

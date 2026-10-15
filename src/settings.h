@@ -19,3 +19,7 @@
 #ifndef VICTRON_READOUT_KEY
 #define VICTRON_READOUT_KEY ""
 #endif
+
+#ifndef BMS_READOUT_MAC
+#define BMS_READOUT_MAC ""
+#endif
