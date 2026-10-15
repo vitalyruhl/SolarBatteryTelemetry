@@ -6,8 +6,10 @@
 #include <esp_system.h>
 #include "settings.h"
 #include "smoke/SmokePolicy.h"
+#include "telemetry/MqttService.h"
 
 static cm::BluetoothManager bluetooth;
+static telemetry::MqttService telemetryMqtt;
 static auto& core=cm::CoreSettings::instance();
 static auto& wifiSettings=core.wifi;
 static auto& systemSettings=core.system;
@@ -57,7 +59,7 @@ static void attachSmokeRuntime() {
     ConfigManager.addLiveCard("Bluetooth","Transport",40);
     ConfigManager.addLiveGroup("Bluetooth","Transport","Smoke test",40);
     ConfigManager.getRuntime().addRuntimeProvider("smoke",[](JsonObject& data) {
-        data["scope"]="WiFi/UI/OTA + BLE worker only; peers missing";
+        data["scope"]="WiFi/UI/OTA + BLE worker; peers missing; MQTT preparation";
         data["workerReady"]=bleWorkerReady;
         data["resetReason"]=static_cast<int>(esp_reset_reason());
     },5);
@@ -86,13 +88,16 @@ void setup() {
     core.attachNtp(ConfigManager);
     bluetooth.attach(ConfigManager);
     attachSmokeRuntime();
+    telemetryMqtt.attach(ConfigManager,MY_MQTT_BROKER_IP,MY_MQTT_BROKER_PORT,MY_MQTT_USERNAME,MY_MQTT_PASSWORD,SMOKE_LOCAL_SECRETS);
     ConfigManager.getOTAManager().setLifecycleObserver([](const OtaLifecycleEvent& event) {
+        telemetryMqtt.pauseForOta(event.stage==OtaStage::Starting||event.stage==OtaStage::Succeeded);
         if(event.stage==OtaStage::Starting || event.stage==OtaStage::Succeeded)
             bluetooth.requestPause(cm::BlePauseReason::Ota);
         else
             bluetooth.requestResume(cm::BlePauseReason::Ota);
     });
     ConfigManager.loadAll();
+    telemetryMqtt.afterLoad();
     setupNetworkDefaults();
 #if defined(WIFI_FILTER_MAC_PRIORITY)
     ConfigManager.setAccessPointMacPriority(WIFI_FILTER_MAC_PRIORITY);
@@ -102,13 +107,14 @@ void setup() {
     bleWorkerReady=bluetooth.begin();
     if(!bleWorkerReady)Serial.println("[W] BLE worker unavailable; WiFi/UI/OTA remain available");
     ConfigManager.startWebServer();
-    Serial.printf("[I] Smoke runtime %s, reset=%d; device telemetry inactive\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
+    Serial.printf("[I] Preparation runtime %s, reset=%d; device adapters inactive\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
 }
 
 void loop() {
     ConfigManager.getWiFiManager().update();
     ConfigManager.handleClient();
     bluetooth.loop(millis());
+    telemetryMqtt.loop(millis());
     delay(1);
 }
 

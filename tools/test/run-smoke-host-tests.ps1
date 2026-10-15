@@ -8,3 +8,11 @@ if($LASTEXITCODE -ne 0){throw 'Smoke host compile failed'}
 if($LASTEXITCODE -ne 0){throw 'Smoke provisioning assertions failed'}
 & python -m unittest discover -s (Join-Path $repo 'test/host') -p test_precompile.py
 if($LASTEXITCODE -ne 0){throw 'ConfigManager dependency validation tests failed'}
+
+foreach($case in @('telemetry_contract_test','mqtt_mailbox_test','mqtt_lifecycle_test')) {
+    $exe=Join-Path $outDir ($case+'.exe')
+    & 'C:/Program Files/LLVM/bin/clang++.exe' -std=c++17 -Wall -Wextra -Werror -I (Join-Path $repo 'src') (Join-Path $repo ('test/host/'+$case+'.cpp')) -o $exe
+    if($LASTEXITCODE -ne 0){throw ($case+' compile failed')}
+    & $exe
+    if($LASTEXITCODE -ne 0){throw ($case+' assertions failed')}
+}

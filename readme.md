@@ -1,26 +1,25 @@
 # SolarBatteryTelemetry
 
-Version **0.2.0** prepares a dedicated ESP32 for a WiFi/UI/OTA and optional BLE
-worker smoke test. The firmware uses ConfigManager's standard WiFi, System OTA
-and NTP groups, built-in system diagnostics and normal WiFi lifecycle hooks.
+Version **0.3.0** prepares a dedicated ESP32 with WiFi/UI/OTA, an optional BLE
+worker and working MQTT connectivity plus all 25 fixed BMS/Victron telemetry
+channels. Device adapters are absent: values are null, source availability is
+unavailable and controls remain disabled. The editable default root is
+`SolarBatteryTelemetry`. See [the MQTT contract](docs/MQTT.md) for channel types,
+limits, root transitions, settings ownership and acceptance boundaries.
+
 The local reserved static IPv4 is **192.168.2.124**; credentials remain ignored.
-
-BluetoothEnable defaults off. With no verified peers, enabling it starts an idle
-transport worker; it does **not** scan, connect or initialize the NimBLE radio.
-The Bluetooth live page explicitly reports missing peers and this limited scope.
-This is software test preparation, not physical BLE/coexistence acceptance.
-
-JBD/Victron protocols, measurements, MQTT telemetry/discovery and the activity LED
-are not implemented. There is no display, external GPIO, RS485, battery/charger
-control or inverter behavior in this stage. SolarInverterLimiter is unchanged.
+BluetoothEnable defaults off. Without verified peers it remains Disabled/Idle,
+without scanning, connecting or initializing NimBLE. There are no battery/charger
+writes, decoder, Home Assistant discovery, activity LED, display, external GPIO,
+RS485 or inverter behavior. SolarInverterLimiter is unchanged.
 
 ## Development dependency and local setup
 
-The prepared 4.2.2 scaffold built successfully before this runtime. Current smoke
+The prepared 4.2.2 scaffold built successfully before this runtime. Current preparation
 source requires the independently reviewed **local ConfigManager 4.5.0 development
 checkout**, which is not claimed to be published. Do not use an older registry
 package as a fallback. The tracked configuration declares the actual consumer
-NimBLE-Arduino **2.5.1** dependency; ignored `platformio.local.ini` binds CM through
+NimBLE-Arduino **2.5.1** and PubSubClient **2.8** dependencies; ignored `platformio.local.ini` binds CM through
 an absolute local symlink. See [the smoke guide](docs/ble-smoke-test.md) for the
 exact local configuration and build commands.
 
@@ -41,7 +40,8 @@ pio run -e usb -e ota
 
 These commands run focused host checks and build firmware only. The selected
 stack remains espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s, with the
-existing dual-slot partition layout. Consumer-only central/observer role flags
+dual-slot OTA layout. The MQTT candidate requires at least 10% actual binary
+reserve per slot; see the MQTT guide for partition migration constraints. Consumer-only central/observer role flags
 and LTO are used as verified in ConfigManager. The known upstream NimBLE LTO
 warning is preserved; see the smoke guide for its exact-image limitations.
 

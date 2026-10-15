@@ -1,7 +1,7 @@
 # SolarBatteryTelemetry - Project Information
 
 Date: 2026-10-15 (Europe/Berlin)
-Status: 0.2.0 flashed over USB; owner reports basic operation without an observed crash in the initial short test. OTA, BLE-radio and long-duration acceptance remain pending.
+Status: 0.3.0 MQTT/channel preparation passed focused host tests, independent review and USB/OTA builds, then was installed on COM11 with all upload hashes verified. Live MQTT delivery, a complete OTA transfer and BLE-device acceptance remain unverified. See docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md.
 
 ## Purpose and approved scope
 
@@ -13,7 +13,7 @@ Assistant. Use the owner's ESP32 Configuration Manager for runtime settings.
 The initial checkpoint created the folder, PlatformIO scaffold, local tooling and
 this decision record; it was reviewed and published privately. On 2026-10-15 the
 owner separately approved the ConfigManager BLE/OTA foundation and, after its
-software gate passed, this limited collector smoke runtime. Current scope is
+software gate passed, this limited collector smoke runtime. That 0.2.0 scope was
 WiFi/UI/OTA using the limiter's standard groups/lifecycle plus optional BLE worker
 Disabled/Idle diagnostics. It supplies no peers, device adapters, measurements,
 MQTT telemetry or LED behavior. The owner subsequently authorized USB flashing
@@ -22,7 +22,13 @@ The detected ESP32-D0WD-V3 has 4 MB flash. Application/bootstrap upload hashes
 passed; the owner reports basic operation without an observed crash. This does
 not establish OTA, RF, telemetry or long-duration stability.
 
-Current app version is 0.2.0. The exact reviewed local ConfigManager 4.5.0 checkout
+Current app version is 0.3.0. The owner authorized working MQTT connectivity,
+an editable base topic and all 25 fixed telemetry/status channels, with actual
+JBD/Victron decoding deferred. Unknown values remain unavailable/null; both
+charge/discharge control paths are metadata-only and read-only. See docs/MQTT.md.
+The prior 0.2.0 scope above is retained as historical smoke evidence.
+
+The reviewed local ConfigManager 4.5.0 checkout
 is an ignored absolute dependency override, not a claimed registry release;
 NimBLE-Arduino 2.5.1 is consumer-owned. The owner reserved 192.168.2.124; local
 network/OTA defaults match the limiter except this unique address/app identity.
@@ -49,8 +55,11 @@ the radio. See docs/ble-smoke-test.md for software scope and manual prerequisite
 - Photo displayed `1200W-PV: 55-90V TO AC220`, `PV Limit`, and 51.2 V DC.
   These are display observations, not confirmation of battery mode or a battery
   specification. Do not infer a specific inverter model from appearance.
-- Collector board provisionally uses the limiter's `nodemcu-32s` build target;
-  actual ESP32 board, flash capacity, LED pin, and polarity remain to be checked.
+- Collector on COM11: owner identifies NodeMCU ESP-32S v1.1; esptool confirms
+  ESP32-D0WD-V3 revision3.1, 4 MB flash, MAC88:57:21:8f:66:4c. The build target
+  remains `nodemcu-32s`. LED pin and polarity remain unverified.
+- Owner also has a UICPAL ESP32-S3-N16R8 and ESP32-C3 Super Mini V1601 available.
+  Neither spare was probed or flashed; no board migration is part of this stage.
 
 ## Existing limiter baseline (owner-reported)
 

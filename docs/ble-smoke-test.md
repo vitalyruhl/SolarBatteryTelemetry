@@ -1,3 +1,5 @@
+> Historical 0.2.0 smoke guide. Current 0.3.0 MQTT preparation and its partition/size gates are documented in [MQTT.md](MQTT.md).
+
 # BLE worker smoke-test preparation (0.2.0)
 
 ## Scope and prerequisites

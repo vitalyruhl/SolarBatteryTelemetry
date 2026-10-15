@@ -1,7 +1,7 @@
 #pragma once
 
-// WiFi/UI/OTA and optional BLE-worker smoke runtime; no telemetry/control.
-#define APP_VERSION "0.2.0"
+// WiFi/UI/OTA, BLE worker and read-only MQTT channel preparation.
+#define APP_VERSION "0.3.0"
 #define VERSION_DATE "2026-10-15"
 
 #if __has_include("secret/secrets.h")
