@@ -17,7 +17,7 @@ runtime settings, MQTT schema/discovery, and the MQTT activity LED are pending.
   MQTT publication. Pin and polarity must be confirmed for the actual board.
 - SolarInverterLimiter remains responsible for inverter control.
 
-Read [project.ifo.md](project.ifo.md) for decisions, context, and open questions.
+Read [project.info.md](project.info.md) for decisions, context, and open questions.
 
 ## Local configuration
 
@@ -52,5 +52,7 @@ intentionally untracked. They exist only on this PC and are not restored by a
 Git clone. Use `.local/tooling.md` on this PC for exact tool commands and
 `.local/governance-provenance.md` for template provenance.
 
-This repository has no remote. The initial checkpoint is a local preparation
-commit; implementation begins only after owner review and further device data.
+The owner authorized publication to the private GitHub repository
+`vitalyruhl/SolarBatteryTelemetry` on 2026-10-15. A later visibility change
+requires a separate owner decision. Implementation begins only after owner
+review and further device data.

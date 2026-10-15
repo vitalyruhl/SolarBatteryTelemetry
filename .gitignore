@@ -31,3 +31,4 @@
 *.log
 node_modules/
 /.cache/
+.temp/

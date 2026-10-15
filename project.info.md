@@ -19,9 +19,11 @@ authorized in this preparation stage.
 ## Hardware and reported installation
 
 - PV array: 1.8 kWp.
-- Newly installed battery: approximately 5 kWh; exact model, chemistry, nominal
-  voltage, BMS vendor/protocol, and app name are still unknown.
-- Solar charger: Victron 150/35 with Bluetooth; exact variant/firmware pending.
+- Newly installed battery: approximately 5 kWh (owner-reported). Exact battery
+  model, chemistry, and nominal voltage remain unknown. Screenshot evidence
+  identifies a 14S BMS and the Overkill Solar app; see the evidence below.
+- Solar charger: Victron SmartSolar MPPT 150/35, product SCC115035210,
+  confirmed by the label photo. Firmware remains pending.
 - Owner enabled broadcast-style Bluetooth readout on the charger. Its temporary
   connection PIN is not recorded here. An Instant Readout encryption key, if
   applicable, is distinct from the connection PIN and must remain local.
@@ -90,7 +92,11 @@ commonly around 17:00-19:00; use actual prices rather than hard-coding this wind
 - Give this device its own application name and MQTT root: SolarBatteryTelemetry.
 - The owner will choose and update a free static IP before any upload.
 - Keep credentials, governance, Serena, ProjectAtlas, and editor/generated state
-  outside Git. Create a local commit only; no GitHub remote or push requested.
+  outside Git. The initial checkpoint was local only. On 2026-10-15 the owner
+  authorized integrating all reviewed product changes into main and publishing
+  `vitalyruhl/SolarBatteryTelemetry` as a private GitHub repository. Credentials,
+  screenshots, governance, and tool state remain excluded. Public visibility
+  requires a separate owner decision; telemetry implementation is still pending.
 
 ## Research findings, not implementation commitments
 
@@ -116,9 +122,10 @@ References consulted during brainstorming:
 
 ## Information needed before implementation
 
-1. Battery model, BMS vendor/model, exact app name, firmware, available readings,
-   and read protocol. Confirm SOC, current sign, temperatures, and alarm fields.
-2. Exact Victron variant, firmware, Instant Readout status, and locally stored
+1. Battery model/chemistry and confirmed BMS vendor/read protocol. The observed
+   model string, firmware, app, and readings are recorded below; validate BLE
+   compatibility, SOC accuracy, current sign, temperatures, and alarm fields.
+2. Victron firmware, verified Instant Readout status, and locally stored
    MAC/encryption key. Do not commit pairing or encryption secrets.
 3. Physical wiring and any AC charging path; no assumptions about energy flow.
 4. Collector board and available flash/RAM, built-in LED behavior, placement,
@@ -126,6 +133,81 @@ References consulted during brainstorming:
 5. MQTT schema, units, timestamps, freshness/availability, discovery strategy,
    update intervals, and handling of reconnects or missing readings.
 6. Owner-selected static IP and explicit approval of the implementation plan.
+
+## Screenshot evidence recorded on 2026-10-15
+
+The owner supplied nine images in `.temp/`. These are observations of labels and
+app screens, not hardware acceptance tests or verified battery specifications.
+Images and pairing secrets are local reference material and must not be staged.
+
+### Device identification
+
+| Item | Observed value | Evidence |
+| --- | --- | --- |
+| Charger | Victron SmartSolar MPPT 150/35; product SCC115035210 | `20261015_092516.jpg` |
+| BMS device name | `15660030-SP15S020-P14S-60A-60AH` | `Screenshot_20261015_093808_Overkill Solar.jpg` |
+| BMS firmware | 2.4 | Same BMS information screen |
+| BMS manufacturer field | ABCDEF; not reliable vendor identification | Same BMS information screen |
+| BMS app | Overkill Solar v2.0.6 | `Screenshot_20261015_093802_Overkill Solar.jpg` |
+| Bluetooth module | DT-1902; pins GND, RXD, TXD, VCC | `20261015_093248.jpg` |
+| Cell count | 14 series cells | Status and configuration screens |
+| Configured total capacity | 131250 mAh (131.25 Ah) | `Screenshot_20261015_094016_Overkill Solar.jpg` |
+
+The displayed name "Powerwall" does not establish the battery manufacturer.
+The device-name suffix "60AH" and configured 131.25 Ah differ; neither establishes
+measured usable capacity or supersedes the owner's approximate 5 kWh report.
+The UART pin labels identify the module interface, not its electrical levels or
+exact protocol. No wired connection is planned for this collector.
+The Victron label includes pairing credentials; their values are deliberately
+omitted from this document.
+
+### Telemetry and configuration snapshots
+
+- Victron at approximately 09:26: PV 128 W, 123.21 V, 1.0 A; battery-side
+  voltage 48.07 V, charger current 2.60 A, charging stage Bulk.
+- Victron configuration: 48 V system, maximum charge current 35 A, absorption
+  58.80 V, float 57.00 V. Equalization voltage is configured as 64.80 V but
+  automatic equalization is disabled; temperature compensation is disabled.
+  These are recorded settings, not an endorsement for the unidentified battery.
+- BMS at 09:38:01: 47.22 V, discharging 9.2 A, power -433.5 W, SOC 1%,
+  remaining capacity 1.4 Ah; temperatures 14.8 and 13.1 degrees Celsius.
+- Cell 10 is lowest at 3.231 V; cell 1 is highest at 3.392 V; spread 161 mV.
+  This is one snapshot under load, not a diagnosis of a defective cell.
+- BMS information reports 190 cycles and a manufacture date of 2019-12-04.
+  These are device-reported fields, not independently verified history.
+- BMS configuration: cell-full voltage 4150 mV, cell-minimal voltage 3000 mV;
+  balancing starts at 4000 mV with a 40 mV delta, enabled only while charging.
+  These fields must not be mistaken for verified protection trip thresholds.
+- Charger current is not net battery current when the inverter draws from the
+  same DC bus. The two app snapshots were taken at different times and must not
+  be combined into a simultaneous energy balance.
+- SOC and capacity accuracy remain unverified. Battery specifications and the
+  complete protection settings are needed before assessing charging settings.
+
+### Protocol inference and remaining evidence
+
+The SP15S020 model string strongly suggests the JBD/Xiaoxiang family. The
+[esphome-jbd-bms project](https://github.com/syssi/esphome-jbd-bms) provides BLE
+and UART implementations and lists an SP15S020 13S variant. This supports using
+it as a protocol reference, but does not confirm this exact 14S device works.
+No BLE read, connection test, or protocol implementation has been performed.
+
+The current candidate remains Victron advertisement reception plus BMS BLE
+polling on one collector ESP32. The actual BMS access method and concurrent
+WiFi/BLE reliability still require validation. No second board decision follows
+from the screenshots alone. Neither the BMS BLE address nor the Victron Instant
+Readout encryption key is available in the supplied screenshots.
+
+The owner saved BMS settings in Overkill Solar but could not locate the file.
+The settings screen shows "BMS read", "Open Config", "Save Config", and
+"BMS write". No file-selection dialog or export location is visible, so no
+filesystem path or successful external export is confirmed. Next evidence:
+open "Open Config" and capture the dialog to identify the saved configuration
+and any export option. "BMS write" is unrelated to locating a backup and is
+outside the read-only collector scope.
+
+This update records evidence only. Firmware implementation, device settings,
+and hardware communication remain outside the approved preparation checkpoint.
 
 ## Next stage after owner review
 
