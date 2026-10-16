@@ -25,7 +25,45 @@ static void drain(Publisher& p,Wire& w,uint32_t now) {for(int n=0;n<20;++n)p.tic
 static const Wire::Message* find(const Wire& w,const char* topic) {
     for(const auto& m:w.sent)if(m.topic==topic)return &m;return nullptr;
 }
+// [MOCKED!] Samples enter through the production publisher; only transport is fake.
+static void testDeadbands() {
+    for(std::size_t i=0;i<channelCount;++i) {
+        const auto& channel=channels[i];
+        if(channel.type!=FieldType::Real||channel.support==Support::Unsupported||channel.support==Support::DerivedLater)continue;
+        const double threshold=std::strcmp(channel.unit,"W")==0?1.0:0.1;
+        Wire wire;Publisher publisher;
+        publisher.setValue(i,Value{true,10});publisher.setSourceAvailable(channel.source,true);
+        publisher.onConnected();drain(publisher,wire,0);wire.sent.clear();
+        publisher.setValue(i,Value{true,10+threshold*.4});drain(publisher,wire,5000);assert(wire.sent.empty());
+        publisher.setValue(i,Value{true,10+threshold*.8});drain(publisher,wire,10000);assert(wire.sent.empty());
+        publisher.setValue(i,Value{true,10+threshold-0.000001});drain(publisher,wire,15000);assert(wire.sent.empty());
+        publisher.setValue(i,Value{true,10+threshold});drain(publisher,wire,20000);assert(wire.sent.size()==1);wire.sent.clear();
+        publisher.setValue(i,Value{true,10+threshold*.6});drain(publisher,wire,25000);assert(wire.sent.empty());
+        publisher.setValue(i,Value{true,10});drain(publisher,wire,30000);assert(wire.sent.size()==1);wire.sent.clear();
+        // Reconnect must replay even a sub-threshold change.
+        publisher.setValue(i,Value{true,10+threshold*.2});publisher.onConnected();drain(publisher,wire,30001);
+        assert(wire.sent.size()==6);wire.sent.clear();
+        publisher.setValue(i,Value{true,std::numeric_limits<double>::quiet_NaN()});drain(publisher,wire,35001);
+        assert(wire.sent.size()==1&&wire.sent[0].payload=="null");wire.sent.clear();
+        drain(publisher,wire,40001);assert(wire.sent.empty());
+        publisher.setValue(i,Value{true,10+threshold*.2});drain(publisher,wire,45001);assert(wire.sent.size()==1);
+    }
+    for(const std::size_t i:{0u,8u,14u,22u,23u}) {
+        Wire wire;Publisher publisher;publisher.setValue(i,Value{true,0});
+        publisher.setSourceAvailable(channels[i].source,true);publisher.onConnected();drain(publisher,wire,0);wire.sent.clear();
+        publisher.setValue(i,Value{true,1});drain(publisher,wire,5000);assert(wire.sent.size()==1);
+    }
+    Wire wire;Publisher publisher;publisher.setValue(3,Value{true,48});publisher.setValue(4,Value{true,-2});
+    publisher.setSourceAvailable(Source::Bms,true);publisher.onConnected();drain(publisher,wire,0);wire.sent.clear();
+    publisher.setValue(3,Value{true,48.27});publisher.setValue(4,Value{true,-1.9});
+    wire.fail=true;drain(publisher,wire,5000);assert(wire.sent.empty());
+    wire.fail=false;drain(publisher,wire,5250);assert(wire.sent.size()==2);
+    assert(find(wire,"SolarBatteryTelemetry/bms/voltage_v")->payload=="48.27");wire.sent.clear();
+    publisher.setValue(3,Value{true,48.35});drain(publisher,wire,10250);assert(wire.sent.empty());
+    publisher.setValue(3,Value{true,48.37});drain(publisher,wire,15250);assert(wire.sent.size()==1);
+}
 int main() {
+    testDeadbands();
     assert(validRoot("SolarBatteryTelemetry",21));
     std::string maxRoot(63,'r'),overRoot(64,'r');
     assert(validRoot(maxRoot.c_str(),63));assert(!validRoot(overRoot.c_str(),64));
