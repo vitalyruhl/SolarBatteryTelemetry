@@ -16,8 +16,9 @@ class Publisher {
  char retiring_[rootLimit+1]{};
  Value latest_[channelCount]{},snapshot_[channelCount]{},lastSent_[channelCount]{};
  static_assert(channelCount<=32,"The fixed field cache uses one bit per channel");
- uint32_t sentFields_=0;
+ uint32_t sentFields_=0,forceFields_=0,refreshAt_=0;bool refreshClockStarted_=false;
  uint8_t sentMetadata_=0;
+ bool controlEnabled_=false,controlReady_=false;
  bool sourceAvailable_[2]{},snapshotAvailable_[2]{};
  std::size_t cursor_=0,retireCursor_=0;
  uint32_t completedAt_=0,retryAt_=0;
@@ -58,7 +59,8 @@ public:
   }
   resetCycle();
  }
- void onConnected(){advertised_=true;clearSent();retry_=false;resetCycle();}
+ void setControl(bool enabled,bool ready){if(enabled==controlEnabled_&&ready==controlReady_)return;controlEnabled_=enabled;controlReady_=ready;sentMetadata_&=static_cast<uint8_t>(~((1u<<2)|(1u<<4)));resetCycle();}
+ void onConnected(){advertised_=true;clearSent();forceFields_=0;refreshClockStarted_=false;retry_=false;resetCycle();}
  void setInterval(uint32_t ms){intervalMs_=ms<5000?5000:ms;}
  // Configuration disable/reconnect uses the same bounded retirement path.
  bool retireCurrent(Transport& wire) {
@@ -87,6 +89,10 @@ public:
   }
   if(!wire.connected())return;
   if(retiring_[0]&&!retire(wire)){retry_=true;retryAt_=now;return;}
+  // A receiver restart must recover unchanged data without restarting this collector.
+  // Refresh current metadata/valid fields every minute, independently of the delta interval.
+  if(!refreshClockStarted_){refreshClockStarted_=true;refreshAt_=now;}
+  else if(static_cast<uint32_t>(now-refreshAt_)>=60000){refreshAt_=now;forceFields_=~uint32_t{0};sentMetadata_=0;resetCycle();}
   if(!pending_&&static_cast<uint32_t>(now-completedAt_)<intervalMs_)return;
   if(!pending_)resetCycle();
   // Four bounded cursor steps (at most four admissions). Skips never allocate or send.
@@ -98,21 +104,21 @@ public:
     if(sentMetadata_&bit){++cursor_;continue;}
     if(cursor_==0)ok=publishOne(wire,root_,"bms/availability",snapshotAvailable_[0]?"available":"unavailable",true);
     else if(cursor_==1)ok=publishOne(wire,root_,"victron/availability",snapshotAvailable_[1]?"available":"unavailable",true);
-    else if(cursor_==2)ok=publishOne(wire,root_,"bms/control/availability","disabled",true);
+    else if(cursor_==2)ok=publishOne(wire,root_,"bms/control/availability",controlReady_?"available":controlEnabled_?"unavailable":"disabled",true);
     else if(cursor_==3)ok=publishOne(wire,root_,"status","online",true);
-    else {char payload[payloadLimit+1];ok=capabilities(root_,payload,sizeof(payload),snapshotAvailable_[1],snapshotAvailable_[0])&&publishOne(wire,root_,"capabilities",payload,true);}
+    else {char payload[payloadLimit+1];ok=capabilities(root_,payload,sizeof(payload),snapshotAvailable_[1],snapshotAvailable_[0],controlEnabled_)&&publishOne(wire,root_,"capabilities",payload,true);}
     if(ok){sentMetadata_|=bit;if(cursor_==3)advertised_=true;}
    } else {
     const auto i=cursor_-5;
     const auto bit=uint32_t{1}<<i;
     if(!snapshotAvailable_[channels[i].source==Source::Bms?0:1]){++cursor_;continue;}
-    // Scalar wire forms fit 32 bytes; comparing serialization avoids double noise.
-    char payload[32],previous[32];
+    // Protection descriptions are bounded at 512 bytes; compare serialized values.
+    char payload[512],previous[512];
     if(formatValue(channels[i],snapshot_[i],payload,sizeof(payload))) {
      if(!(sentFields_&bit)) {
       // No initial unknown/unsupported field burst; availability carries source loss.
       if(std::strcmp(payload,"null")==0){++cursor_;continue;}
-     } else if(formatValue(channels[i],lastSent_[i],previous,sizeof(previous))) {
+     } else if(!((forceFields_&bit)&&std::strcmp(payload,"null"))&&formatValue(channels[i],lastSent_[i],previous,sizeof(previous))) {
       if(std::strcmp(payload,previous)==0){++cursor_;continue;}
       // Deadband affects admission only; retain full payload precision and validity transitions.
       if(channels[i].type==FieldType::Real&&std::strcmp(payload,"null")&&std::strcmp(previous,"null")) {
@@ -125,7 +131,7 @@ public:
       }
      }
      ok=publishOne(wire,root_,channels[i].suffix,payload,false);
-     if(ok){lastSent_[i]=snapshot_[i];sentFields_|=bit;}
+     if(ok){lastSent_[i]=snapshot_[i];sentFields_|=bit;forceFields_&=~bit;}
     }
    }
    if(!ok){retry_=true;retryAt_=now;return;}

@@ -1,4 +1,4 @@
-# JBD BMS readout
+# JBD BMS telemetry and guarded MOS control
 
 The collector uses the shared ConfigManager BLE worker to connect to the configured JBD/Xiaoxiang peer. The documented target is an SP15S020 14-series-cell BMS used with Overkill Solar. Actual device compatibility requires hardware acceptance.
 
@@ -8,17 +8,25 @@ Settings > Bluetooth > BMS > Readout exposes `BmsReadMac`. The optional local `B
 
 ## Protocol boundary
 
-Service FF00, notifications FF01, requests FF02. Only the seven-byte read requests for basic information (03) and cell information (04) are emitted. No authentication fallback, factory mode, charger/MOSFET commands or BMS configuration writes exist. A subscription descriptor write and telemetry read-request writes are necessary BLE transport operations.
+Service FF00, notifications FF01, requests FF02. Ordinary polling uses seven-byte requests for basic information (03) and cell information (04). The guarded control path additionally supports only the two charge/discharge MOS permissions through E1. There is no authentication fallback, factory mode, calibration, protection-setting or generic register write. A subscription descriptor write and telemetry read-request writes are necessary BLE transport operations.
 
 A cycle queries basic information then cells, one outstanding query at a time, with a two-second response deadline and approximately five seconds between completed cycles. A bounded 262-byte parser validates status, checksum, register and end marker; only a complete valid 14-cell cycle publishes a new sample. Disconnect, reconfiguration and OTA pause invalidate availability. Samples expire after 30 seconds without a valid cycle. Invalid or unavailable values remain null.
 
-Reported current is signed: positive means charging and negative discharging. Power is battery voltage times net battery current. Charging/discharging activity follows current direction; MOS permission is reported separately. Temperature is the maximum of the validated available NTC readings; cell minimum, maximum and spread use all 14 cell readings. Alarm bits are raw; no protection-setting interpretation is applied.
+Reported current is signed: positive means charging and negative discharging. Power is battery voltage times net battery current. Charging/discharging activity follows current direction; MOS permission is reported separately. Minimum and maximum temperature use all validated available NTC readings; cell minimum, maximum and spread use all 14 cell readings. Cell and NTC counts are exposed. Raw alarm bits remain available alongside named active protection flags; unknown high bits remain visible. No protection thresholds are inferred.
+
+## Guarded MOS permissions
+
+`BMS control enabled` (`BmsControl`) defaults to false. The rollout keeps it disabled until installation compatibility and charge/load stopping behavior are qualified. Desired MOS states are never persisted. Both the ESP actions and MQTT use a bounded mailbox; only the application loop calls the shared BLE worker.
+
+A command reads fresh basic status, preserves the opposite MOS permission, sends the absolute E1 disable-bit mask, requires a successful acknowledgement, then reads a complete new basic/cell pair. Only matching observed flags produce `verified`. The result also reports observed net current; MOS readback is not proof of electrical isolation or current interruption. A write is never retried automatically. Disconnect, reconfiguration, OTA pause, disablement and expiry cancel intent. An already transmitted write cannot be undone by cancellation; subsequent telemetry remains the source of truth.
+
+The ESP exposes separate Enable/Disable charge MOS and Enable/Disable discharge MOS actions. `control_admission` shows rejected/accepted mailbox admission separately from transaction phase and result. Disabled, stale, expired, cancelled and busy requests are rejected at arrival; taking a request keeps its reservation until completion. Existing CM runtime-action endpoints are accessible within the local network; the control gate is a commissioning interlock, not authentication. MQTT broker access control and network boundaries remain deployment responsibilities. See [MQTT command contract](MQTT.md#guarded-command-contract).
 
 ## Reference and validation
 
-Protocol fields and BLE UUIDs were checked against the [esphome-jbd-bms implementation](https://github.com/syssi/esphome-jbd-bms/tree/main/components/jbd_bms_ble). This adapter is independently implemented and imports no authentication/control code. Host fixtures are synthetic, not captured device data.
+Protocol fields and BLE UUIDs were checked against the [esphome-jbd-bms implementation](https://github.com/syssi/esphome-jbd-bms/tree/main/components/jbd_bms_ble). This adapter is independently implemented and imports no external authentication or control implementation. Host fixtures are synthetic, not captured device data.
 
-Run `tools/test/run-jbd-host-tests.ps1` and the existing Victron/MQTT regression tests. Device acceptance is recorded separately; passing host tests does not establish radio compatibility.
+Run `tools/test/run-bms-command-tests.ps1` and `tools/test/run-jbd-host-tests.ps1` and the existing Victron/MQTT regression tests. Device acceptance is recorded separately; passing host tests does not establish radio compatibility.
 
 ## Hardware acceptance, 2026-10-15
 
