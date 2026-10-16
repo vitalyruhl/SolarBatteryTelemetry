@@ -12,6 +12,10 @@ static std::vector<uint8_t> frame(uint8_t reg,std::vector<uint8_t> p){
 }
 static void put(std::vector<uint8_t>& p,size_t n,uint16_t v){p[n]=v>>8;p[n+1]=v&255;}
 static void near(double a,double b){assert(std::fabs(a-b)<0.000001);}
+static size_t channel(const char* suffix){
+ for(size_t i=0;i<telemetry::channelCount;++i)if(!std::strcmp(telemetry::channels[i].suffix,suffix))return i;
+ assert(false && "Required telemetry channel missing");return 0;
+}
 int main(){
  uint8_t command[7]{};assert(readCommand(3,command));
  const uint8_t expected[]={0xdd,0xa5,3,0,0xff,0xfd,0x77};assert(!std::memcmp(command,expected,7));
@@ -29,6 +33,24 @@ int main(){
  auto s=cycle.snapshot(110);assert(s.available);near(s.values[3].number,47.22);near(s.values[4].number,-9.2);near(s.values[5].number,-434.424);
  assert(s.values[0].number==0&&s.values[1].number==1);near(s.values[6].number,1.4);near(s.values[7].number,131.25);
  near(s.values[10].number,14.8);near(s.values[11].number,3.3);near(s.values[12].number,3.43);near(s.values[13].number,.13);assert(s.values[14].number==0x123);
+ const auto minimum=channel("bms/temperature_min_c"), count=channel("bms/cell_count"), ntcs=channel("bms/temperature_sensor_count"), protection=channel("bms/protection");
+ assert(s.values[minimum].valid);near(s.values[minimum].number,13.1);
+ assert(s.values[count].valid&&s.values[count].number==14);assert(s.values[ntcs].valid&&s.values[ntcs].number==2);
+ char text[512]{};
+ assert(telemetry::formatValue(telemetry::channels[protection],{true,0},text,sizeof(text))&&!std::strcmp(text,"none"));
+ assert(telemetry::formatValue(telemetry::channels[protection],{true,0xc401},text,sizeof(text)));
+ assert(std::strstr(text,"cell_overvoltage")&&std::strstr(text,"short_circuit")&&std::strstr(text,"unknown_14")&&std::strstr(text,"unknown_15"));
+ assert(!telemetry::formatValue(telemetry::channels[protection],{true,0xffff},text,4));
+ // [MOCKED!] Synthetic basic/cell pairs exercise NTC validation and empty arrays.
+ auto readPair=[&](std::vector<uint8_t> payload){Cycle c;Parser parser2;Frame f;bool accepted=false;
+  for(auto v:frame(3,payload))if(parser2.push(v,f))accepted=c.accept(f,100);
+  for(auto v:b)if(parser2.push(v,f))c.accept(f,110);
+  return std::make_pair(accepted,c.snapshot(110));};
+ auto temps=basic;put(temps,23,2681);put(temps,25,2831);auto cold=readPair(temps);
+ assert(cold.first&&cold.second.available);near(cold.second.values[minimum].number,-5);near(cold.second.values[10].number,10);
+ temps[22]=0;temps.resize(23);auto empty=readPair(temps);
+ assert(empty.second.available&&!empty.second.values[minimum].valid&&!empty.second.values[10].valid&&empty.second.values[ntcs].number==0);
+ temps=basic;put(temps,23,5000);auto invalid=readPair(temps);assert(!invalid.first&&!invalid.second.available);
  assert(cycle.snapshot(30109).available&&!cycle.snapshot(30110).available);cycle.reset();assert(!cycle.snapshot(111).available);
  // Cell-only, bad lengths/counts/status/checksum and truncated temperatures cannot refresh a sample.
  assert(!cycle.accept(decoded,112));

@@ -109,6 +109,7 @@ void setup() {
         Serial.println("[E] MQTT settings initialization failed");return;
     }
     if(!bmsReadout.attach(ConfigManager,bluetooth)){Serial.println("[E] BMS settings initialization failed");return;}
+    telemetryMqtt.bindBms(bmsReadout);
     bluetooth.setEventHandler([](const cm::BleEvent& event){victronReadout.onEvent(event);bmsReadout.onEvent(event);});
     ConfigManager.getOTAManager().setLifecycleObserver([](const OtaLifecycleEvent& event) {
         telemetryMqtt.pauseForOta(event.stage==OtaStage::Starting||event.stage==OtaStage::Succeeded);
@@ -127,15 +128,17 @@ void setup() {
     readoutPrefs.end();
     if(!readoutReady){Serial.println("[E] Readout initialization failed");return;}
     setupNetworkDefaults();
-#if defined(WIFI_FILTER_MAC_PRIORITY)
-    ConfigManager.setAccessPointMacPriority(WIFI_FILTER_MAC_PRIORITY);
-#endif
-    // SmartSolar uses passive advertisements; JBD uses read-only GATT queries.
+    // SmartSolar uses passive advertisements; JBD uses serialized telemetry and explicitly enabled MOS transactions.
     // Do not initialize NimBLE separately; the CM worker owns its first radio operation.
     printHealth("before-ble");
     bleWorkerReady=bluetooth.begin();
     if(!bleWorkerReady)Serial.println("[W] BLE worker unavailable; WiFi/UI/OTA remain available");
     ConfigManager.startWebServer();
+#if defined(WIFI_FILTER_MAC_PRIORITY)
+    // Match SIL: allow the initial connection before enabling preferred-AP scans.
+    // The configured priority still applies to later reconnects and roaming.
+    ConfigManager.setAccessPointMacPriority(WIFI_FILTER_MAC_PRIORITY);
+#endif
     printHealth("server-started");
     appReady=true;
     Serial.printf("[I] Collector runtime %s, reset=%d; passive Victron readout\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
@@ -150,9 +153,9 @@ void loop() {
     bmsReadout.loop(now);
     bluetooth.loop(now);
     const auto sample=victronReadout.snapshot();
-    telemetryMqtt.updateVictron(sample.values,sample.available);
+    telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,now);
     const auto battery=bmsReadout.snapshot();
-    telemetryMqtt.updateBms(battery.values.data(),battery.available);
+    telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,now);
     telemetryMqtt.loop(now);
     static uint32_t lastHealth=0;
     if(uint32_t(now-lastHealth)>=5000){lastHealth=now;printHealth("loop-alive");}

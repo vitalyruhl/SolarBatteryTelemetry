@@ -62,8 +62,30 @@ static void testDeadbands() {
     publisher.setValue(3,Value{true,48.35});drain(publisher,wire,10250);assert(wire.sent.empty());
     publisher.setValue(3,Value{true,48.37});drain(publisher,wire,15250);assert(wire.sent.size()==1);
 }
+void testMinuteRefresh(){
+ Wire wire;Publisher p;p.setInterval(3600000);p.setSourceAvailable(Source::Bms,true);
+ p.setValue(3,{true,48.12});p.setValue(8,{true,1});p.setValue(14,{true,0});p.onConnected();drain(p,wire,100);wire.sent.clear();
+ p.setValue(3,{true,48.13});drain(p,wire,60099);assert(wire.sent.empty());
+ wire.fail=true;drain(p,wire,60100);assert(wire.sent.empty());wire.fail=false;drain(p,wire,60349);assert(wire.sent.empty());
+ drain(p,wire,60350);assert(wire.sent.size()==8);
+ assert(find(wire,"SolarBatteryTelemetry/bms/voltage_v")->payload=="48.13");
+ assert(find(wire,"SolarBatteryTelemetry/bms/charge_enabled")->payload=="true");
+ assert(find(wire,"SolarBatteryTelemetry/bms/alarm_bits")->payload=="0");
+ assert(!find(wire,"SolarBatteryTelemetry/victron/pv_voltage_v"));wire.sent.clear();
+ p.setPaused(true);drain(p,wire,120100);assert(wire.sent.empty());p.setPaused(false);drain(p,wire,120101);assert(wire.sent.size()==8);
+ // A full refresh must retain validity transitions rather than silently dropping null.
+ wire.sent.clear();p.setValue(3,{});drain(p,wire,180101);assert(find(wire,"SolarBatteryTelemetry/bms/voltage_v")->payload=="null");
+ Wire wrapped;Publisher q;q.setValue(3,{true,1});q.setSourceAvailable(Source::Bms,true);q.onConnected();drain(q,wrapped,0xfffffff0u);wrapped.sent.clear();
+ drain(q,wrapped,0xea4fu);assert(wrapped.sent.empty());drain(q,wrapped,0xea50u);assert(wrapped.sent.size()==6);
+}
 int main() {
+    testMinuteRefresh();
     testDeadbands();
+    {Wire wire;Publisher publisher;publisher.setValue(28,{true,65535});
+     publisher.setSourceAvailable(Source::Bms,true);publisher.onConnected();drain(publisher,wire,0);
+     const auto* result=find(wire,"SolarBatteryTelemetry/bms/protection");
+     assert(result&&result->payload.find("unknown_15")!=std::string::npos&&publisher.delivered());}
+
     assert(validRoot("SolarBatteryTelemetry",21));
     std::string maxRoot(63,'r'),overRoot(64,'r');
     assert(validRoot(maxRoot.c_str(),63));assert(!validRoot(overRoot.c_str(),64));
@@ -76,8 +98,8 @@ int main() {
     assert(!buildTopic("x","status",topic,8));
     std::string suffix(64,'s');assert(buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
     suffix+='s';assert(!buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
-    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/pv_voltage_v","victron/pv_current_a","victron/battery_voltage_v","victron/charge_current_a","victron/battery_power_w","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh"};
-    assert(channelCount==25);
+    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/pv_voltage_v","victron/pv_current_a","victron/battery_voltage_v","victron/charge_current_a","victron/battery_power_w","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh","bms/temperature_min_c","bms/cell_count","bms/temperature_sensor_count","bms/protection"};
+    assert(channelCount==sizeof(expected)/sizeof(expected[0]));
     for(std::size_t i=0;i<channelCount;++i) {
         assert(std::strcmp(channels[i].suffix,expected[i])==0);
         assert(channels[i].label[0]);
@@ -216,7 +238,7 @@ int main() {
     for(std::size_t i=0;i<channelCount;++i)all.setValue(i,Value{true,1});
     all.setSourceAvailable(Source::Bms,true);all.setSourceAvailable(Source::Victron,true);all.onConnected();
     for(int tick=0;tick<20;++tick){const auto before=bounded.attempts;all.tick(0,bounded);assert(bounded.attempts-before<=4);}
-    assert(bounded.sent.size()==27&&all.delivered());
+    assert(bounded.sent.size()==31&&all.delivered());
     bounded.sent.clear();drain(all,bounded,5000);assert(bounded.sent.empty());
     std::puts("Telemetry contract: bounds, serialized deltas, absent sources, partial retries, reconnect/rename, wrap and OTA pause passed");
 }

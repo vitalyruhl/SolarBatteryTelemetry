@@ -6,7 +6,7 @@ This inventory compares protocol capabilities with the current SolarBatteryTelem
 
 ## Evidence and interpretation
 
-- The implementation defines 25 telemetry channels: 15 BMS and 10 Victron fields.
+- The accepted baseline defined 25 telemetry channels: 15 BMS and 10 Victron fields. The approved October 16 feature appends four BMS fields (29 total); historical values below remain observations from the earlier baseline.
 - A read-only ESP runtime response on 2026-10-16 reported both sources available, all 15 BMS fields populated, six Victron fields populated, and four Victron fields null.
 - The snapshot below is historical, not a live dashboard or a calibration result. Values from the two sources are not guaranteed to have identical acquisition times.
 - Web fields were verified against the source-defined page metadata; no new rendered-browser acceptance test was performed.
@@ -18,13 +18,13 @@ Implementation references: [channel definitions](../src/telemetry/TelemetryChann
 
 ## MQTT send thresholds and display
 
-The working-tree publisher uses the owner-selected absolute deadband: 0.1 in each real-valued channel unit, except 1 W for channels expressed in W. This includes all BMS cell voltages and cell spread. Comparison uses the last successfully sent value; payload precision is preserved. Status, alarm and validity transitions remain exempt. Home Assistant voltage display should use two decimal places independently of these thresholds. The deadband is a local, tested code change and has not been deployed to the ESP. Separately, all five existing HA voltage entities were set to two decimal places and verified on the live dashboard on 2026-10-16. See [MQTT policy and display configuration](MQTT.md#home-assistant-display-precision).
+The working-tree publisher uses the owner-selected absolute deadband: 0.1 in each real-valued channel unit, except 1 W for channels expressed in W. This includes all BMS cell voltages and cell spread. Comparison uses the last successfully sent value; payload precision is preserved. Status, alarm and validity transitions remain exempt. Home Assistant voltage display should use two decimal places independently of these thresholds. The owner subsequently installed and tested the deadband baseline by OTA. Separately, all five existing HA voltage entities were set to two decimal places and verified on the live dashboard on 2026-10-16. See [MQTT policy and display configuration](MQTT.md#home-assistant-display-precision).
 
 ## Basis for the future SIL assessment
 
 The added `SIL need / purpose` column is a requirements assessment, not an implementation claim. It uses [the recorded energy-management intent](../project.info.md#energy-management-intent-for-later-work): prioritize PV charging during cheap periods, preserve a battery reserve, cover actual household demand during expensive periods, and release available inverter capacity when the battery is full and sunshine continues. The reported inverter limit is 900 W; the approximate 600 W household idle load is not a fixed dispatch target. Actual prices must be used, not a fixed evening time window. Grid charging hardware is unconfirmed.
 
-The owner additionally requested independent charge/discharge MOS blocking on 2026-10-16. This is recorded as a future requirement, not authorization to implement or send commands. The analysis also consulted the sibling SolarInverterLimiter `readme.md` and `docs/todo.md`: signed grid feedback and price inputs are documented, while asymmetric setpoint ramp limiting is still planned. These are documentation observations, not fresh SIL code or hardware acceptance.
+The owner additionally requested independent charge/discharge MOS blocking on 2026-10-16. The owner subsequently approved the guarded design and implementation plan; the installation gate stays disabled and no live MOS switching is authorized during rollout. The analysis also consulted the sibling SolarInverterLimiter `readme.md` and `docs/todo.md`: signed grid feedback and price inputs are documented, while asymmetric setpoint ramp limiting is still planned. These are documentation observations, not fresh SIL code or hardware acceptance.
 
 - **Required**: an input or behavior needed by this assessment of the stated functions; exact policies and thresholds remain to be designed. **Required (owner)** identifies the explicit MOS-control request.
 - **Conditional**: needed only for the stated extension or selected architecture; not a blanket requirement to add another interface.
@@ -32,7 +32,7 @@ The owner additionally requested independent charge/discharge MOS blocking on 20
 - **Service only**: commissioning or maintenance, not an automatic SIL write.
 - **Not needed**: outside the stated initial SIL function set.
 
-No new battery limits, thresholds, MQTT topics or component ownership are specified here. The earlier read-only scope remains the current implementation; the MOS request extends the future requirements only. SOC/capacity confidence, battery chemistry, sensor placement and wiring must be resolved before defining battery-dependent operating limits.
+No new battery limits, thresholds, MQTT topics or component ownership are specified here. The approved feature implements only guarded charge/discharge MOS permissions; other write operations remain unimplemented. SOC/capacity confidence, battery chemistry, sensor placement and wiring must be resolved before defining battery-dependent operating limits.
 
 ## BMS: implemented values
 
@@ -66,7 +66,7 @@ The regular cycle reads basic information (`0x03`) and cell information (`0x04`)
 | --- | --- | --- | --- | --- |
 | Cell voltages 1-14 | Already received in `0x04` | Reduced to minimum, maximum and spread | No | Optional - diagnosis; minimum/maximum already support basic cell checks |
 | Individual temperatures | Already received in `0x03` | Reduced to highest temperature | No | Conditional - identify sensor placement and derive relevant cold/hot limits |
-| Minimum relevant battery temperature | Derivable from received NTC readings once sensor placement is known | Not calculated; only maximum exposed | No | Required - cold-temperature gate; limits depend on confirmed battery specification |
+| Minimum relevant battery temperature | Derivable from received NTC readings once sensor placement is known | Minimum of all validated NTCs; placement relevance still unverified | `bms/temperature_min_c` | Required - cold-temperature gate; limits depend on confirmed battery specification |
 | Lowest-voltage cell number | Derivable from received cells | Not calculated | No | Optional - diagnosis |
 | Highest-voltage cell number | Derivable from received cells | Not calculated | No | Optional - diagnosis |
 | Average cell voltage | Derivable from received cells | Not calculated | No | Optional - diagnosis; does not replace cell extremes |
@@ -74,9 +74,9 @@ The regular cycle reads basic information (`0x03`) and cell information (`0x04`)
 | Manufacture date | Included in `0x03` | Ignored | No | Optional - inventory |
 | BMS software version | Included in `0x03` | Ignored | No | Conditional - qualify compatible write behavior before enabling controls |
 | Balancing state and affected cells | Bitmask in `0x03` | Ignored | No | Optional - explain cell behavior; no balancing control needed for tariff dispatch |
-| Cell count | Included in `0x03` | Validated as 14 | No | Required - validate expected pack layout; already checked internally |
-| Temperature sensor count | Included in `0x03` | Controls temperature parsing | No | Required - detect incomplete temperature coverage; already parsed internally |
-| Individual protection messages | Already received as alarm bits | Only numeric bitfield exposed | No | Required - distinguish charge/discharge blocking causes and report them |
+| Cell count | Included in `0x03` | Validated as 14 | `bms/cell_count` | Required - validate expected pack layout; already checked internally |
+| Temperature sensor count | Included in `0x03` | Controls temperature parsing | `bms/temperature_sensor_count` | Required - detect incomplete temperature coverage; already parsed internally |
+| Individual protection messages | Already received as alarm bits | Raw bits plus named active flags | `bms/protection` | Required - distinguish charge/discharge blocking causes and report them |
 | Model/hardware identifier | Separate `0x05` request | Not requested | No | Conditional - qualify commands; can also use verified commissioning records |
 | Historical protection-event counters | Separate `0xAA` request | Not requested | No | Optional - diagnosis; not a substitute for active faults |
 
@@ -127,7 +127,7 @@ References: [VE.Direct TEXT specification](https://www.victronenergy.com/upload/
 
 ## Write capabilities
 
-Checked against the linked references on 2026-10-16. These tables describe potential extensions. No device writes were performed or tested; none of these controls is implemented in SolarBatteryTelemetry. Protocol support does not establish compatibility with the installed firmware or suitability of a setting for the battery.
+Checked against the linked references on 2026-10-16. These tables describe potential extensions. No live device-control writes were performed or tested. Only the two guarded BMS MOS controls are implemented, with installation enablement still disabled. Protocol support does not establish compatibility with the installed firmware or suitability of a setting for the battery.
 
 ### Access methods
 
@@ -137,7 +137,7 @@ Checked against the linked references on 2026-10-16. These tables describe poten
 | VictronConnect over Bluetooth | Yes | Supported app settings | Separate app, not ESP functionality | Service only - commissioning; not an automated SIL control path |
 | Victron VE.Direct HEX | Yes | Documented write commands | Not connected/implemented | Conditional - candidate for charger stop/limits; no cable decision approved |
 | Victron active Bluetooth from custom ESP code | Requires separate protocol investigation | Not verified for this project | Not implemented | Conditional - alternative requiring protocol feasibility; not assumed available |
-| JBD over active BLE/GATT | Yes | Protocol-family write operations exist; device verification pending | Only `0x03`/`0x04` telemetry requests | Required - existing telemetry path plus owner-requested MOS controls |
+| JBD over active BLE/GATT | Yes | Protocol-family write operations exist; device verification pending | `0x03`/`0x04` telemetry plus guarded `0xE1` MOS commands | Required - existing telemetry path plus owner-requested MOS controls |
 
 VictronConnect access is described in the [device configuration manual](https://www.victronenergy.com/media/pg/Manual_SmartSolar_MPPT_150-35__150-45/en/configuration-and-settings.html). BLE transport writes used to request BMS measurements are not BMS configuration/control writes.
 
@@ -181,8 +181,8 @@ References describe the JBD family. Every row is untested on the installed SP15S
 
 | Command | Evidence / reference | ESP implemented | SIL need / purpose |
 | --- | --- | --- | --- |
-| Enable/disable charging permission | MOS control `0xE1`; [switch definition](https://github.com/syssi/esphome-jbd-bms/blob/main/components/jbd_bms_ble/switch/__init__.py) | No; MQTT path reserved only | Required (owner) - charge MOS blocking and controlled re-enable; coordinated sequence needed |
-| Enable/disable discharging permission | MOS control `0xE1`; same switch definition | No; MQTT path reserved only | Required (owner) - discharge MOS blocking and controlled re-enable; inverter coordination needed |
+| Enable/disable charging permission | MOS control `0xE1`; [switch definition](https://github.com/syssi/esphome-jbd-bms/blob/main/components/jbd_bms_ble/switch/__init__.py) | Implemented, default-disabled; live qualification pending | Required (owner) - charge MOS blocking and controlled re-enable; coordinated sequence needed |
+| Enable/disable discharging permission | MOS control `0xE1`; same switch definition | Implemented, default-disabled; live qualification pending | Required (owner) - discharge MOS blocking and controlled re-enable; inverter coordination needed |
 | Force SOC reset/reassessment | `0x0A`, operation `0x0100`; [button definition](https://github.com/syssi/esphome-jbd-bms/blob/main/components/jbd_bms_ble/button/__init__.py) | No | Service only - validate SOC separately; never automatically reset for tariff dispatch |
 | Select automatic balancing | `0x0A`, operation `0x0700`; same button definition | No | Service only - no tariff-dependent balancing requirement |
 | Clear alarm | `0x0A`, operation `0x0400`; same button definition | No | Service only - no automatic fault clearing/re-enable |
@@ -191,7 +191,7 @@ References describe the JBD family. Every row is untested on the installed SP15S
 
 Balancing paths must not be conflated: the reference also lists an EEPROM balancer-enable bit, but its BLE switch configuration is commented out. Treat automatic balancing, manual balance control and stored balancing policy as different operations requiring device-specific verification. Alarm clearing is not evidence that the underlying condition has disappeared; SOC reset is not a battery-capacity measurement.
 
-The existing `bms/charge_enabled/set` and `bms/discharge_enabled/set` suffixes are reserved metadata only. The collector reports `read_only=true`, `commands_enabled=false` and disabled BMS control availability. It has no control subscriptions or handlers; publishing to those names does not actuate the BMS. See [channel contract](../src/telemetry/TelemetryChannels.h) and [MQTT documentation](MQTT.md).
+The two existing `bms/charge_enabled/set` and `bms/discharge_enabled/set` paths now accept bounded session/expiry-protected absolute requests when the installation gate and runtime readiness permit. Readback checks both MOS flags and reports observed net current. At rollout the gate remains disabled, so commands are rejected. See [MQTT documentation](MQTT.md#guarded-command-contract).
 
 ### BMS persistent settings and service operations
 
@@ -240,7 +240,7 @@ These requirements are identified by the assessment; the table does not create n
 | Allowed charge/discharge envelope | Battery specifications, temperatures and BMS protections not fully verified | Required - independently constrain economic decisions; preserve autonomous BMS protection |
 | Collector/source availability and communication-loss behavior | Source freshness exists; end-to-end SIL behavior is not designed | Required - define stale-data handling; do not treat unchanged MQTT values as stale solely because they are silent |
 | MOS command result and state readback | Only observed permission fields and reserved command paths exist | Required - observe both MOS states and current; a transport acknowledgment alone does not prove the requested electrical result |
-| Command ownership, expiry, restart behavior and deliberate re-enable | No command contract implemented | Required - define who may control, reject obsolete/duplicate commands, and avoid unintentional re-enable after reconnect |
+| Command ownership, expiry, restart behavior and deliberate re-enable | Implemented session, expiry, duplicate rejection and actual readback; installation qualification pending | Required - define who may control, reject obsolete/duplicate commands, and avoid unintentional re-enable after reconnect |
 | Coordinated charge/discharge stopping | Exact BMS port topology and behavior with charger/inverter connected remain unverified | Required - qualify stopping the relevant power source/load before routine MOS blocking; exact sequence and timing remain open |
 | Smooth inverter ramping | SIL TODO requests separate rise/fall rates | Required for the already-planned SIL extension - coordinate with reserve/fault/zero handling; do not let an ordinary ramp delay a required stop |
 | PV curtailment at full battery | Current PV power may already be curtailed; no additional energy sink confirmed | Conditional - charger limiting if selected; increasing inverter allowance cannot create household demand |
@@ -251,10 +251,27 @@ Normal economic dispatch should use the inverter power setpoint. The requested M
 
 A controllable charger stop or current-limit path may be needed for coordinated charge blocking. The actual mechanism remains open; this does not mandate VE.Direct wiring or claim that passive BLE can send commands. Verify the installation-specific behavior first. The [Victron installation guidance](https://www.victronenergy.com/media/pg/Manual_SmartSolar_MPPT_150-35__150-45/en/installation.html) is a hardware reference, not proof that a software MOS command is equivalent to safely disconnecting the battery.
 
-Most first-stage dispatch inputs already exist. The immediate documented gaps are minimum relevant battery temperature, decoded protection causes, a validated SOC/usable-capacity basis, end-to-end freshness and command feedback, and the two owner-requested MOS controls. Direct Victron write support is conditional; PV voltage/current, history, cycle count, balancing control and configuration/calibration writes are not prerequisites for initial price-based dispatch.
+Most first-stage dispatch inputs already exist. The feature fills the software gaps for minimum NTC temperature, decoded protection causes, source freshness and guarded MOS commands. A validated SOC/usable-capacity basis, sensor placement and live installation qualification remain open. Direct Victron write support is conditional; PV voltage/current, history, cycle count, balancing control and configuration/calibration writes are not prerequisites for initial price-based dispatch.
 
 ## Maintaining this inventory
 
 When an extension is implemented, update its acquisition, decoding, web and MQTT status separately and cite the implementation and validation evidence. Keep protocol support distinct from acceptance on the actual device. Preserve the dated snapshot as historical evidence or replace it with an explicitly dated observation; never present it as live data.
 
-The closest extensions using existing data are individual cell voltages, individual temperatures, balancing, cycle count and readable protection messages. Battery-side Victron power can also be derived from existing values. These are candidates, not approved implementation tasks.
+The closest extensions using existing data are individual cell voltages, individual temperatures, balancing, cycle count and per-cell diagnostics beyond the new protection messages. Battery-side Victron power can also be derived from existing values. These are candidates, not approved implementation tasks.
+
+## Approved October 16 implementation status
+
+| Function | Current feature | Required for SIL | Remaining qualification |
+| --- | --- | --- | --- |
+| Minimum NTC, cell count, NTC count, protection descriptions | ESP and MQTT implemented; HA additions prepared | Required | Battery chemistry, sensor placement and operating limits |
+| Source freshness and reason | Independent 5-second health objects with receipt sequence/age | Required | SIL mocked reception/reconnect/fault checks passed; real-source reception pending at the normal installation |
+| Charge/discharge MOS permissions | Serialized E1 write with fresh pre-read, opposite-MOS preservation and paired readback; gate disabled | Required (owner) | Live compatibility and coordinated charger/inverter stopping |
+| Remaining capacity, charging/discharging activity, cell spread | Existing fields preserved | Optional additions requested by owner | Capacity accuracy remains unverified |
+| Victron PV power, output current, charge state and error | Existing passive BLE fields preserved | Required | No direct charger-control path in this scope |
+| PV voltage/current | Still unsupported without VE.Direct hardware | Optional additions requested by owner | Isolated UART connection and separate approved implementation |
+
+The software additions do not define a new SIL regulation algorithm, battery limits or automatic re-enable policy. A verified command result is protocol feedback, not proof of electrical isolation. No Victron sending is included.
+
+### Fixed 60-second MQTT refresh
+
+At the owner's request on October 16, every 60 seconds the collector republishes source/control availability, capabilities and all currently valid measurements, including unchanged values and differences below the deadband. This timer is independent of the normal publication interval. Between refreshes the 0.1-unit/1-W deadbands still apply. Unsupported fields remain unavailable; no fabricated values are emitted. Admission retry, bounded cursor work and OTA pause remain in force. A restarted Home Assistant recovers unchanged values within approximately one minute while the collector, sources and broker are available. Network failures or OTA pauses can extend that interval. This refresh does not replace the 5-second source-health heartbeat.
