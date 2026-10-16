@@ -1,5 +1,6 @@
 #pragma once
 #include "TelemetryChannels.h"
+#include <limits>
 namespace telemetry {
 // The only network operations the portable coordinator can request. No receive or device-write API.
 struct Transport {
@@ -111,7 +112,18 @@ public:
      if(!(sentFields_&bit)) {
       // No initial unknown/unsupported field burst; availability carries source loss.
       if(std::strcmp(payload,"null")==0){++cursor_;continue;}
-     } else if(formatValue(channels[i],lastSent_[i],previous,sizeof(previous))&&std::strcmp(payload,previous)==0){++cursor_;continue;}
+     } else if(formatValue(channels[i],lastSent_[i],previous,sizeof(previous))) {
+      if(std::strcmp(payload,previous)==0){++cursor_;continue;}
+      // Deadband affects admission only; retain full payload precision and validity transitions.
+      if(channels[i].type==FieldType::Real&&std::strcmp(payload,"null")&&std::strcmp(previous,"null")) {
+       const double threshold=std::strcmp(channels[i].unit,"W")==0?1.0:0.1;
+       const double delta=std::fabs(snapshot_[i].number-lastSent_[i].number);
+       // Accept exact decimal boundaries despite binary floating-point subtraction error.
+       const double scale=std::fmax(1.0,std::fmax(std::fabs(snapshot_[i].number),std::fabs(lastSent_[i].number)));
+       const double tolerance=8*std::numeric_limits<double>::epsilon()*scale;
+       if(delta<threshold-tolerance){++cursor_;continue;}
+      }
+     }
      ok=publishOne(wire,root_,channels[i].suffix,payload,false);
      if(ok){lastSent_[i]=snapshot_[i];sentFields_|=bit;}
     }
