@@ -5,79 +5,64 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL - Ablaufdiagramm für die gemeinsame Diskussion
+# SIL - Main discussion flow
 
-Stand: 16.10.2026, Runde 3. Entwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-Die frühere PDF zeigt den vorherigen Diskussionsstand. Diese Markdown-Datei ist die überarbeitete Quelle; nach Änderungen bitte neu als PDF exportieren.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or approved for device operation. This Markdown file is the source; any earlier PDF is stale and must be exported again after edits.
 
-Einstellungen werden beim Start einmal geladen. Änderungen aktualisieren interne Variablen per Callback; der Regelzyklus nutzt diese Variablen ohne erneutes Laden der Einstellungen. Siehe Unterprogramm 09.
+Settings are loaded once at startup. Callbacks update internal variables used by the control cycle; settings are not reread each cycle.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Regelzyklus beginnt]) --> B[Aktuelle Messwerte übernehmen]
-    B --> C[[Frische und Plausibilität prüfen]]
-    C --> D[[Lüfterbedarf aus Akku- und Umgebungstemperatur bestimmen]]
-    D --> E{Inverter freigegeben?}
-    E -- Nein --> STOP[Inverter-Sollwert: 0 W]
-    E -- Ja --> F[[Richtungsabhängige Schutzprüfung]]
-    F --> G{Schutzreaktion erforderlich?}
-    G -- Ja --> PROTECT[[Laden oder Entladen begrenzen / sperren<br/>MOS-Berechtigungen beachten<br/>Details noch abstimmen]]
-    G -- Nein --> H{Gültiger Negativpreis-Stopp?}
-    H -- Ja --> STOP
-    H -- Nein --> I{Netz- und Invertermesswerte gültig?}
-    I -- Nein --> J{BMS frisch und gesund?}
-    J -- Ja --> STORE[Einlagern:<br/>Inverter-Sollwert 0 W<br/>sichere PV-Ladung zulassen]
-    J -- Nein --> OPEN[Gemeinsamer Messausfall:<br/>Regel noch festlegen]
-    I -- Ja --> K{BMS und Victron gültig?}
-    K -- Nein --> MAX[Konfiguriertes MAX anfordern]
-    K -- Ja --> L{Limiter eingeschaltet?}
-    L -- Nein --> MAX
-    L -- Ja --> M{Neuplanung fällig<br/>oder wichtige Änderung?}
-    M -- Ja --> N[[Energie über Abend und Morgen verteilen]]
-    M -- Nein --> O[Aktuell gültigen Plan verwenden]
-    N --> P
-    O --> P
-    P[[Aktuelles Energiebudget und Leistungsobergrenze berechnen]]
-    P --> Q[[Netz-PID berechnet Leistung für den Hausbedarf]]
-    Q --> R[PID-Ergebnis durch Energiebudget,<br/>PV-Angebot und Gerätegrenzen begrenzen]
-    STOP --> SEND
-    STORE --> SEND
-    MAX --> SEND
-    R --> SEND
-    SEND[[Sollwert senden und tatsächliche Wirkung prüfen]]
-    SEND --> VIEW[Zustand und Entscheidungsgrund anzeigen]
-    PROTECT --> VIEW
-    OPEN --> VIEW
-    VIEW --> END([Nächster Regelzyklus])
+ A([Startup or control cycle]) --> B[Read current measurements and retained state]
+ B --> C[[Validate freshness and shared recovery state]]
+ C --> D[[Evaluate both protection directions]]
+ D --> F[[Evaluate fan demand and alarm events]]
+ F --> REC{Initial qualification complete?}
+ REC -- No --> ZERO[Propose inverter 0 W; no MOS replay]
+ REC -- Yes --> E{Protection demand?}
+ E -- Yes --> P[[Determine directional protection response]]
+ E -- No --> G{Inverter enabled?}
+ G -- No --> ZERO
+ G -- Yes --> H{Valid negative-price stop?}
+ H -- Yes --> ZERO
+ H -- No --> I{Grid or AC unavailable?}
+ I -- Yes --> STORE[Propose 0 W; storage only if healthy BMS allows it]
+ I -- No --> K{BMS or Victron unavailable?}
+ K -- Yes --> MAX[Propose configured MAX unless retained restriction applies]
+ K -- No --> L{Limiter enabled?}
+ L -- No --> MAX
+ L -- Yes --> M{Replan due or material change?}
+ M -- Yes --> N[[Recalculate plan or current-price fallback]]
+ M -- No --> O[Use current valid plan or fallback]
+ N --> Q[[Calculate permitted power ceiling]]
+ O --> Q
+ Q --> VALID{Usable ceiling available?}
+ VALID -- No --> INVALID[Report invalid budget; request qualified fallback]
+ VALID -- Yes --> R[[Grid PID limited by current ceiling]]
+ ZERO --> ARB
+ P --> ARB
+ STORE --> ARB
+ MAX --> ARB
+ INVALID --> ARB
+ R --> ARB
+ ARB[Combine directional limits, recovery, measurement policy,<br/>Hand or Auto ownership, OFF and negative-price zero]
+ ARB --> SEND[[Send permitted request and check effect asynchronously]]
+ SEND --> VIEW[Show mode, SIL request, actual state, strategy and reason]
+ VIEW --> END([Next cycle])
 ```
 
-## Beispiel für die Diskussion
+The protection subprogram must still enforce inverter OFF and the valid negative-price zero request; a protection branch must not leave an earlier positive inverter request active. Fan demand is evaluated on both normal and protection paths.
 
-15 % SOC, 1.358 W Hausbedarf, 27 W PV; Preis 0,39 EUR/kWh, später 0,42 EUR/kWh. Mit angenommenen 6,74 kWh nomineller Kapazität, 5 % Reserve, 90 % Entladewirkungsgrad und einer gewünschten Versorgungsdauer von 1,5 Stunden ergibt sich ungefähr 430 W Inverterleistung. Diese Annahmen sind keine gemessene Laufzeitgarantie. 900 W würden den so berechneten Vorrat in ungefähr 42 Minuten aufbrauchen, 450 W in ungefähr 85 Minuten.
+Protection remains active when inverter is disabled and during the Limiter OFF economics bypass. A fan ON request and Home Assistant alarm cannot prove that charging has physically stopped. MOS automation is restricted to fault handling and remains subject to the whole-control write gate. A positive MAX or inverter setpoint is a request, not a guarantee of physical power.
 
-## Offene Gesprächspunkte
+## Illustrative example
 
-- Energie möglichst gleichmäßig über teure Stunden verteilen oder stärker auf die teuerste Spitze konzentrieren?
-- Wirtschaftliche Reserve und Hysterese; tatsächliche nutzbare Kapazität und SOC-Verlässlichkeit.
-- Richtungsspezifische Schutzreaktionen und nachgewiesene Strompfade bei geöffneten MOS.
-- Verhalten beim gleichzeitigen Verlust von BMS-, Netz- und Invertermesswerten.
-- Automatische PV-Nutzung ohne saisonales Nachstellen; endgültige MIN-Einstellung.
+At 15% SOC, 1,358 W household demand, 27 W PV, and prices of €0.39/kWh and later €0.42/kWh, a prior illustration estimated about 430 W inverter output using 6.74 kWh nominal capacity, 5% reserve, 90% discharge efficiency, and a 1.5-hour window. These are historical assumptions, not a runtime guarantee. The current reserve default is 2%; the old numerical example must not be interpreted as recalculated for that default.
 
-Die wirtschaftliche Planung wird im MAX-Bypass umgangen. Eine Schutzreaktion darf explizites Inverter-OFF nicht unbemerkt aufheben. Die Schutz-Unterprogramme sind noch auszuarbeiten; das Diagramm beschreibt keine bereits implementierte Automatik.
+## Review and export
 
-## Unterprogramme und Druckanleitung
-
-- [Frische und Plausibilität prüfen](01-messwerte.md)
-- [Lüfterbedarf aus Akku- und Umgebungstemperatur bestimmen](02-luefter.md)
-- [Richtungsabhängige Schutzprüfung](03-schutzpruefung.md)
-- [Laden oder Entladen begrenzen oder sperren](04-schutzreaktion.md)
-- [Energie über Abend und Morgen verteilen](05-energieplanung.md)
-- [Aktuelles Energiebudget und Leistungsobergrenze berechnen](06-energiebudget.md)
-- [Netz-PID berechnet Leistung für den Hausbedarf](07-netz-pid.md)
-- [Sollwert senden und tatsächliche Wirkung prüfen](08-senden-ruecklesen.md)
-- [Einstellungen beim Start und per Callback übernehmen](09-einstellungen-callback.md)
-
-[PDF selbst erstellen](README.md#selbst-als-pdf-ausgeben)
+See [Round 5 decisions](round-5-decisions-and-defaults.md) and the [README](README.md) for subprogram links and PDF export instructions. Round 5 defines the reserve default, separate mode selector, price fallback and recovery direction. Hardware-path qualification, CM behavior and total-controller-failure behavior remain verification work.

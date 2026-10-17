@@ -5,29 +5,28 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL – Frische und Plausibilität prüfen
+# SIL - Validate measurement freshness and plausibility
 
-Stand: 16.10.2026, Runde 3. Grober Diskussionsentwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-**Ein- und Ausgang:** Messwerte mit Zeitstempeln und Herkunft → Gültigkeit je Quelle, bekannte Fehler und Wiederanlaufstatus.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or hardware-qualified.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Inputs and outputs:** Timestamped, sourced measurements -> per-source validity, retained protection faults, and recovery status.
+
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Aufruf]) --> B[Zeitstempel und Werte je Quelle prüfen]
-    B --> C{Frisch und plausibel?}
-    C -- Nein --> D[Quelle ungültig markieren]
-    C -- Ja --> E{Quelle war ausgefallen?}
-    E -- Nein --> F[Quelle gültig]
-    E -- Ja --> G{Seit 5 Sekunden frisch<br/>und mindestens zwei neue Proben?}
-    G -- Nein --> D
-    G -- Ja --> F
-    D --> H[Bekannte Schutzfehler erhalten]
-    F --> H
-    H --> I([Status zurückgeben])
+ A([Cycle]) --> B[Check timestamps and plausible ranges]
+ B --> C{Fresh and plausible?}
+ C -- No --> D[Mark source invalid]
+ C -- Yes --> E{Previously failed?}
+ E -- No --> F[Mark source valid]
+ E -- Yes --> G{5 seconds recovered and 2 new samples?}
+ G -- No --> D
+ G -- Yes --> F
+ D --> H[Retain known protection faults]
+ F --> H --> I([Return status])
 ```
 
-## Annahmen und offene Punkte
-
-5 Sekunden sind eine feste Code-Konstante, keine Einstellung. Wiederholte alte MQTT-Werte gelten nicht als neue Proben. Ungültig ist nicht gleich null. Frischegrenzen pro Quelle und zulässige Wertebereiche müssen vor Umsetzung festgelegt werden; dieser Baustein entscheidet noch keinen MAX- oder Einlagerungsmodus.
+Freshness limits initially use programmed defaults; optional configurability may be added only if ESP resources permit. The five-second recovery period and two new samples remain fixed recovery behavior. Three expected sample intervals was only a proposal and is not validated. Repeated old MQTT values are not new samples; invalid is not zero. Source-specific freshness limits and ranges remain to be qualified. Future settings may be considered if ESP resources permit.

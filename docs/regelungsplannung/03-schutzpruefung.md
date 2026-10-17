@@ -5,29 +5,29 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL – Richtungsabhängige Schutzprüfung
+# SIL - Evaluate directional battery protection
 
-Stand: 16.10.2026, Runde 3. Grober Diskussionsentwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-**Ein- und Ausgang:** Gültige BMS- und Victron-Meldungen, Temperaturherkunft, Zellwerte und Stromrichtung → richtungsbezogene Schutzanforderungen.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or hardware-qualified.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Inputs and outputs:** Valid BMS and Victron reports, temperature source, cell values, and current direction -> separate charge and discharge protection demands.
+
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Aufruf]) --> B[Bekannte Fehler und aktuelle Meldungen zusammenführen]
-    B --> C[Ursprung bestimmen:<br/>Zellen, BMS-Leistungsteil oder Ladegerät]
-    C --> D[Laden und Entladen getrennt bewerten]
-    D --> E{Harte Sperre erforderlich?}
-    E -- Ja --> F[Betroffene Richtung als gesperrt melden]
-    E -- Nein --> G{Vorwarnschwelle überschritten?}
-    G -- Ja --> H[Betroffene Richtung als begrenzt melden]
-    G -- Nein --> I[Keine neue Schutzanforderung]
-    F --> J([Beide Richtungen und Grund zurückgeben])
-    H --> J
-    I --> J
+ A([Protection evaluation]) --> B[Combine known faults and current reports]
+ B --> C[Identify source: cells, BMS power stage, or charger]
+ C --> D[Evaluate charge and discharge separately]
+ D --> E{Hard block required?}
+ E -- Yes --> F[Request block of affected direction]
+ E -- No --> G{Warning or limit required?}
+ G -- Yes --> H[Limit affected direction]
+ G -- No --> I[No new demand]
+ F --> J([Return both directions, source, and reason])
+ H --> J
+ I --> J
 ```
 
-## Annahmen und offene Punkte
-
-Beide Richtungen können gleichzeitig betroffen sein. BMS-Schutz bleibt eigenständig; SIL darf ihn nicht umgehen. Lade- und Entladegrenzen sowie Hysteresen sind getrennt zu qualifizieren. Ein Telemetrieverlust löscht keine bekannte Sperre. Entsperren erfordert gültige Rückmeldung und erfüllte Freigabebedingungen. Fehlerzuordnung und genaue Schwellen sind offen.
+Protection is evaluated at the top of the control flow and applies even when the inverter is disabled. It outranks economics and the Limiter OFF bypass. Limiter OFF bypasses economic control only; it does not bypass protection or measurement fallback. Existing protection remains latched through telemetry loss. Clearing requires valid recovery evidence and satisfied release conditions. Reuse CM warning and main-alarm callbacks for the analog signals, as directed by the owner. The sibling AlarmManager API is observed, but the dependency used by SIL and its hysteresis and invalid-sample behavior still require verification. Callbacks update protection state; physical command arbitration remains separate. Charge/discharge thresholds and hysteresis require qualification; no new thresholds are inferred.

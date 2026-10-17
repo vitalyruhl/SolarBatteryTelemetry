@@ -5,26 +5,27 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL – Netz-PID berechnet Leistung für den Hausbedarf
+# SIL - Use grid PID to calculate power for household demand
 
-Stand: 16.10.2026, Runde 3. Grober Diskussionsentwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-**Ein- und Ausgang:** Gültige Netz- und Inverterleistung, Bezugssoll und zulässige Leistungsgrenzen → angeforderte Inverterleistung.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or hardware-qualified.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Inputs and outputs:** Valid grid and inverter power, import target, and allowed limits -> requested inverter power.
+
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Aufruf]) --> B{Messwerte gültig?}
-    B -- Nein --> C[PID nicht nach alten Werten weiterregeln<br/>Messausfallmodus anfordern]
-    B -- Ja --> D[Regelfehler aus Netzbezug und Bezugssoll bilden]
-    D --> E[PID berechnet Leistungsanforderung]
-    E --> F[Auf Energiebudget und Gerätegrenzen begrenzen]
-    F --> G[Begrenzung an Integrator zurückmelden<br/>Auflaufen verhindern]
-    G --> H([Sollwert zurückgeben])
-    C --> I([Kein gültiger PID-Sollwert])
+ A([PID cycle]) --> B{Measurements valid?}
+ B -- No --> C[Stop updating from stale values and request fallback]
+ C --> I([Return invalid PID status])
+ B -- Yes --> CAP[Update economic ceiling with separate up and down ramps]
+ CAP --> D[Calculate error from grid import and target]
+ D --> E[Existing grid PID calculates demand]
+ E --> F[Apply energy budget and device limits]
+ F --> G[Track final transmitted or held actuator command for anti-windup]
+ G --> H([Return bounded setpoint])
 ```
 
-## Annahmen und offene Punkte
-
-PID korrigiert den aktuellen Netzbezug. Er verteilt keine Energie über Abend und Morgen. 650 W ist eine Planungsannahme und kein fester PID-Sollwert. Vorzeichen und Reglerausgang müssen an den bestehenden SIL-Regler angepasst werden. Bei Inverter-AUS, MAX-Bypass oder Schutzmodus Integrator passend nachführen; ruckfreie Rückkehr ist zu prüfen. Der gezeigte Begrenzungsschritt entspricht der Begrenzung nach dem PID im Hauptablauf.
+Reuse the existing grid PID. Ramp the normal economic ceiling using separate upward and downward constants, initially 50 W/s each; optionally expose both as settings if resources permit. Track the final transmitted/held actuator command for anti-windup, including output clipping and the RS485 publication interval. A sudden household-load drop may immediately reduce the request. Reserve, protection, inverter OFF and valid negative-price restrictions bypass the economic ramp. An economic target decrease alone uses the downward ramp. The 650 W value is a planning load, not a fixed PID target. Align signs and units with the existing SIL controller. Inverter OFF, MAX bypass, and protection mode require suitable integrator handling; smooth recovery remains to be checked.

@@ -5,33 +5,40 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL – Laden oder Entladen begrenzen oder sperren
+# SIL - Limit or block charging and discharging
 
-Stand: 16.10.2026, Runde 3. Grober Diskussionsentwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-**Ein- und Ausgang:** Richtungsbezogene Anforderungen, Freigaben und Messwerte → begrenzter Sollwert, zulässige MOS-Anforderung und Ergebnis.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or hardware-qualified.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Inputs and outputs:** Directional protection demands, permissions, and measurements -> bounded request, permitted MOS action, and result.
+
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Schutzanforderung]) --> B{Harte Sperre erforderlich?}
-    B -- Nein --> C{Laden betroffen?}
-    C -- Ja --> D[PV-Verbrauch am Inverter gezielt erhöhen<br/>nur innerhalb Freigaben und Grenzen]
-    C -- Nein --> E[Entladeleistung reduzieren]
-    D --> F[Netto-Akkustrom prüfen<br/>keine zusätzliche Entladung erzwingen]
-    E --> G
-    F --> G[Explizites Inverter-AUS und Negativpreis-Stopp beachten]
-    B -- Ja --> H[Betroffene Stromrichtung sicher sperren lassen]
-    H --> I{MOS-Steuerung und Automatik erlaubt<br/>und Strompfad qualifiziert?}
-    I -- Ja --> J[Betroffenen MOS-Befehl anfordern]
-    I -- Nein --> K[Keine automatische MOS-Schaltung<br/>unerfüllte Schutzanforderung melden]
-    J --> L[[Befehl und Wirkung prüfen]]
-    K --> M([Schutzstatus zurückgeben])
-    G --> L
-    L --> M
+ A([Protection demand]) --> B{Hard block required?}
+ B -- No --> C{Charge affected?}
+ C -- Yes --> OFF{Inverter OFF or valid negative-price stop?}
+ OFF -- Yes --> ALERT[Request inverter 0 W and fan ON; raise HA app alarm]
+ ALERT --> L
+ OFF -- No --> D[Increase inverter PV use only within qualified limits]
+ C -- No --> E[Reduce discharge]
+ D --> F[Check net battery current]
+ E --> G
+ F --> G[Respect inverter OFF and negative-price stop]
+ B -- Yes --> H[Determine required directional block]
+ H --> I{Overall gate enabled, Auto selected,<br/>and MOS path qualified?}
+ I -- Yes --> J[Request affected MOS action]
+ I -- No --> K[Raise HA app alarm and report unmet demand]
+ J --> L[[Check request, acknowledgement, and observed effect]]
+ K --> FAN[Request fan ON for the unresolved charge or heat demand]
+ FAN --> M([Return protection state])
+ G --> L --> M
 ```
 
-## Annahmen und offene Punkte
+Automatic MOS operation is limited to fault handling, not reserve or economics. Keep the existing overall BmsControl write gate and add a separate Hand/Auto selector (proposed compact key mosMan). In Hand, SIL publishes the protective request and alarms but does not move MOS; manual operation wins. In Auto, SIL may handle qualified fault requests. Enforce origin and ownership at SBT admission and transmission; HA is not the sole interlock. Returning to Auto triggers fresh evaluation, never replay. Do not equate no SIL request with an ON command.
 
-Bei gleichzeitigen Anforderungen den strengeren zulässigen Betrieb bestimmen; niemals Laden gegen Entladeschutz ausspielen. Der vorhandene BMS-Eigenschutz muss unabhängig wirksam bleiben. Inverter 0 W verhindert PV-Ladung nicht. Eine fehlende MOS-Berechtigung darf deshalb nicht als erfolgreich ausgeführte Ladesperre gelten. Wie PV bei gesperrter Batterie sicher weiterläuft, ist hardwareseitig offen. Ladegerät-Stopp und weitere Rückfallebenen sind erst zu qualifizieren.
+Automatic restoration only reverses a still-owned fault block after valid release evidence; a later manual command invalidates that ownership. Inverter 0 W does not prove that PV charging has stopped. No PV-only path is assumed with discharge MOS off. BMS hardware protection remains independent.
+
+Alarm plus fan is the accepted escalation when inverter OFF or a negative-price stop prevents charge/heat mitigation. The missing-grid exception allows charge mitigation only with fresh BMS evidence of reduced charging and no discharge restriction. A hard discharge restriction also requests inverter reduction if MOS action is denied or fails. Every path passes through final arbitration so simultaneous charge/discharge restrictions, manual ownership and explicit zero requirements cannot be bypassed. See [current decisions and defaults](round-5-decisions-and-defaults.md).

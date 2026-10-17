@@ -5,29 +5,33 @@ puppeteer:
   printBackground: true
 ---
 
-# SIL – Energie über Abend und Morgen verteilen
+# SIL - Plan energy across evening and morning
 
-Stand: 16.10.2026, Runde 3. Grober Diskussionsentwurf, keine Freigabe zur Umsetzung.
+Current baseline: [Round 5 decisions and initial constants](round-5-decisions-and-defaults.md). Round 5 takes precedence over older proposals; no device settings have been changed.
 
-**Ein- und Ausgang:** Preise, SOC, Reserve, erwartete Last und verfügbare PV-Prognose → Energieanteile pro Zeitfenster.
+Status: 2026-10-17, Round 5. Owner-approved first design; not implemented or hardware-qualified.
 
-**Formen:** Rechteck = Anweisung; doppelte Seitenlinien = Unterprogramm; Raute = Entscheidung; abgerundet = Start/Ende.
+**Inputs and outputs:** Prices, SOC, reserve, expected load, and available PV forecast -> energy allocations by time window.
+
+**Shapes:** Rectangle = action; double-sided rectangle = subprogram; diamond = decision; rounded shape = start/end.
 
 ```mermaid
 flowchart TD
-    A([Neuplanung]) --> B{Preise und Energiedaten ausreichend?}
-    B -- Nein --> C[Keinen neuen gültigen Plan behaupten<br/>Rückfallmodus noch festlegen]
-    B -- Ja --> D[Nutzbare Energie oberhalb Reserve schätzen]
-    D --> E[Abend und nächsten Morgen gemeinsam betrachten]
-    E --> F[Erwarteten Bedarf und PV je Zeitfenster abschätzen]
-    F --> G[Wirtschaftlichen Vorteil nach Verlusten<br/>und Verschleiß bewerten]
-    G --> H[Energie auf geeignete Zeitfenster verteilen]
-    H --> I[Leistungsgrenze und Reserve einhalten]
-    I --> J[Plan mit Gültigkeit und Annahmen ablegen]
-    C --> K([Planstatus zurückgeben])
-    J --> K
+ A([Plan]) --> B{Sufficient valid price and energy data?}
+ B -- No --> C[Select current-price fallback or return incomplete energy status]
+ B -- Yes --> D[Estimate usable energy above reserve]
+ C --> K
+ D --> E[Plan evening and following morning together]
+ E --> F[Estimate demand and PV by window]
+ F --> G[Assess benefit after losses and wear]
+ G --> H[Allocate energy to suitable windows]
+ H --> I[Respect power and protection limits]
+ I --> J[Store plan validity and assumptions]
+ J --> K([Return plan status])
 ```
 
-## Annahmen und offene Punkte
+Use the current [Round 5 baseline](round-5-decisions-and-defaults.md). The price strategy produces a ceiling for the existing grid PID, not a forced inverter output. Start with comfort EUR 0.25/kWh and db EUR 0.06/kWh; derive switching hysteresis as db / 3 without another setting. With valid current price but missing future prices, cheap/comfort preserves battery, expensive allocates energy over an anchored three-hour window, and very expensive (comfort + 2*db) permits the otherwise allowed PID maximum. Negative-price zero, reserve and directional protection remain effective.
 
-Vorschläge: 36 Stunden Horizont, Neuplanung alle 30 Minuten oder bei wesentlicher Änderung; aktuelle 15-Minuten-Preise trotzdem rechtzeitig anwenden. Planungsgrundlast zunächst 650 W. Ohne PV-Prognose keine sichere künftige Ladung versprechen. Ausgewogene Versorgung gegenüber reiner Preisspitzenoptimierung bleibt Diskussionspunkt. Bereits gespeicherte Energie nicht erneut mit vergangenen Ladeverlusten belasten. Reserve 5 % plus 3 Prozentpunkte Hysterese ist ein Vorschlag, keine Zellschutzgrenze.
+The owner selected two adjustable reserve thresholds: discharge OFF at 2% and ON at 10%; retain the previous permission between thresholds. No separate reserve-hysteresis setting is needed. This is not BMS cell protection or long-term storage SOC. Planning load remains 650 W; the 36-hour look-ahead does not invent unavailable future prices or PV. Replan every 30 minutes plus events and apply actual 15-minute price boundaries on time. An invalid energy estimate returns incomplete status; it must not reach PID with an uninitialized cap. Missing current price uses the documented battery-preserving initial fallback, subject to the measurement policies.
+
+Use separate code constants for discharge efficiency, round-trip efficiency, wear, and minimum advantage, with optional settings later if resources permit. Replanning replaces energy allocations in one common ledger; it must not add old carried energy to fresh SOC energy. The earlier separate 0.35 hold threshold is not an additional active setting; later-window holding and in-window release must remain distinct.
