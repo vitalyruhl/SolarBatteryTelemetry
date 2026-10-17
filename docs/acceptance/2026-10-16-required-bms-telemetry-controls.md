@@ -118,3 +118,66 @@ No tracked GitHub Actions workflow exists; local checks provide the software gat
 Known HTTP truncation/timeouts and the historical panic remain unresolved and
 are handed off to ConfigurationsManager's diagnostic TODO. These findings are
 not represented as fixed by this integration.
+
+## Discharge test and owner acceptance, later on October 16
+
+The owner advanced the planned evening test because cloud cover allowed a real
+battery-discharge baseline. The bounded automated test observed -3.81 A
+(approximately 192 W), both MOS enabled and no protection bits. A single
+non-retained discharge-disable command returned `verified`; a later complete
+sample reported discharge disabled, 0 A and only `software_mos_lock` (0x1000).
+The next sample temporarily reported discharge enabled with +2.42 A charging
+current while the software lock remained set. A subsequent sample again reported
+discharge disabled and 0 A, without another disable command. The strict test
+therefore stopped on inconsistent MOS feedback rather than declaring a pass.
+Exactly one restoration command returned `verified`; both MOS were enabled,
+negative discharge current resumed and protection bits cleared. The command gate
+was disabled and independently read back. These observations remain the automated
+evidence; they are not rewritten as a clean uninterrupted-readback test.
+
+At the owner's explicit request, the installation gate was enabled again for
+manual Home Assistant testing, without sending another MOS command. Readback
+confirmed `control_enabled=true`, `control_ready=true`, both MOS enabled and
+zero protection bits; HA displayed both Allow switches as available.
+
+The owner then manually checked operation and explicitly confirmed that everything
+works as intended and the test is accepted as passed. This is owner-observed
+installation acceptance of manual control. The owner accepts the fluctuating ESP
+readback unchanged for now. Resource overload is a suspected explanation, not a
+measured root cause. Manual HA control remains enabled while SIL automation is
+unfinished; do not silently revoke that permission or force either MOS state.
+This acceptance does not activate or qualify autonomous SIL MOS scheduling.
+
+Private trace evidence is retained in the coordinating workspace under
+`.local/mos-discharge-20261016/evidence.json` and
+`.local/mos-discharge-20261016/manual-ha-release.json`. No firmware, protection
+limits, charger settings or inverter settings were changed by these test commands.
+
+### Planned wired follow-up
+
+When the isolators arrive, the owner plans to connect both BMS and Victron to the
+ESP over their appropriate UART interfaces (including Victron VE.Direct), then
+compare operation against the BLE baseline. Verify wiring, isolation, voltage
+levels and protocol support before connection. Record readback consistency,
+measurement age/update rate, cycle time, free/minimum heap and task stack headroom
+under comparable load. Disabling/removing unused BLE may improve memory and timing,
+but no improvement is promised or measured yet; distinguish runtime disablement
+from removing the BLE stack from a later build. No UART implementation, rewiring
+or further test is authorized or executed by this documentation update.
+
+### HA whole-control gate and separate cards
+
+The owner clarified that the requested HA switch must control the complete existing
+`BmsControl` gate, including manual Allow commands. Overview and Power now show
+separate Battery / BMS and BMS MOS cards; the obsolete qualification hint is removed.
+`switch.sbt_bms_control_enabled` follows the boolean `enabled` attribute of the
+existing MQTT control-status sensor. Its two HA REST actions set the existing
+BMS setting through `/config/save?category=BMS&key=7B8D02D5007C`; they do not send
+physical MOS commands. This is separate from the proposed SIL `mosAuto` setting.
+
+HA configuration validation passed. An HA switch off/on check confirmed the ESP
+gate and disabled/re-enabled both Allow controls. Charge MOS remained enabled and
+discharge MOS remained disabled throughout, preserving the owner's current choice.
+The final gate is enabled and ready. Private configuration backups, saved-dashboard
+comparisons and gate/UI evidence are in the coordinating workspace under
+`.local/ha-mos-cards-20261016/`. No firmware was changed.

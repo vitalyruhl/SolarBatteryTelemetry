@@ -16,7 +16,7 @@ Reported current is signed: positive means charging and negative discharging. Po
 
 ## Guarded MOS permissions
 
-`BMS control enabled` (`BmsControl`) defaults to false. The rollout keeps it disabled until installation compatibility and charge/load stopping behavior are qualified. Desired MOS states are never persisted. Both the ESP actions and MQTT use a bounded mailbox; only the application loop calls the shared BLE worker.
+`BMS control enabled` (`BmsControl`) defaults to false. The firmware default remains disabled. On October 16 the owner accepted manual charge/discharge testing and requested that the installed gate remain enabled for manual HA operation while SIL automation is unfinished. See the [acceptance record](acceptance/2026-10-16-required-bms-telemetry-controls.md#discharge-test-and-owner-acceptance-later-on-october-16) for the observed readback fluctuation and the separate owner confirmation. This does not authorize autonomous SIL switching. Desired MOS states are never persisted. Both the ESP actions and MQTT use a bounded mailbox; only the application loop calls the shared BLE worker.
 
 A command reads fresh basic status, preserves the opposite MOS permission, sends the absolute E1 disable-bit mask, requires a successful acknowledgement, then reads a complete new basic/cell pair. Only matching observed flags produce `verified`. The result also reports observed net current; MOS readback is not proof of electrical isolation or current interruption. A write is never retried automatically. Disconnect, reconfiguration, OTA pause, disablement and expiry cancel intent. An already transmitted write cannot be undone by cancellation; subsequent telemetry remains the source of truth.
 
