@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ConfigManager.h>
+#include "runtime/AppRuntimeMetadata.h"
 #include <bluetooth/BluetoothManager.h>
 #include <core/CoreSettings.h>
 #include <core/CoreWiFiServices.h>
@@ -85,14 +86,7 @@ static void setupNetworkDefaults() {
 #endif
 }
 
-static void addRuntimeField(const char* source,const char* key,const char* label,int order,bool isBool=false,bool isString=false) {
-    RuntimeFieldMeta meta;
-    meta.sourceGroup=source;meta.group="Tests";meta.page="Bluetooth";meta.card="Transport";
-    meta.key=key;meta.label=label;meta.order=order;meta.isBool=isBool;meta.isString=isString;meta.precision=0;
-    ConfigManager.getRuntime().addRuntimeMeta(meta);
-}
-
-static void attachSmokeRuntime() {
+static bool attachSmokeRuntime() {
     ConfigManager.addLivePage("Bluetooth",40);
     ConfigManager.addLiveCard("Bluetooth","Transport",40);
     ConfigManager.addLiveGroup("Bluetooth","Transport","Tests",40);
@@ -101,17 +95,7 @@ static void attachSmokeRuntime() {
         data["workerReady"]=bleWorkerReady;
         data["resetReason"]=static_cast<int>(esp_reset_reason());
     },5);
-    addRuntimeField("smoke","scope","Scope",1,false,true);
-    addRuntimeField("smoke","workerReady","BLE worker ready",2,true);
-    addRuntimeField("smoke","resetReason","Reset reason",3);
-    addRuntimeField("bluetooth","enabled","Bluetooth enabled",10,true);
-    addRuntimeField("bluetooth","state","Transport state",11);
-    addRuntimeField("bluetooth","connected","GATT connected",12,true);
-    addRuntimeField("bluetooth","scanning","Scanning",13,true);
-    addRuntimeField("bluetooth","queueDrops","Queue drops",14);
-    addRuntimeField("bluetooth","lastError","Last transport error",15);
-    addRuntimeField("bluetooth","lateEvents","Suppressed late events",16);
-    addRuntimeField("bluetooth","workerStackHighWaterBytes","Worker stack free (bytes)",17);
+    return sbt::metadata::registerSmokeFields(ConfigManager.getRuntime());
 }
 
 void setup() {
@@ -126,7 +110,7 @@ void setup() {
     if(!attachSystemSettings()){lmg.logTag(LL::Error, "SETUP", "System settings initialization failed");return;}
     core.attachNtp(ConfigManager);
     bluetooth.attach(ConfigManager);
-    attachSmokeRuntime();
+    if(!attachSmokeRuntime()){lmg.logTag(LL::Error, "SETUP", "Runtime fields unavailable");return;}
     if(!victronReadout.attach(ConfigManager,bluetooth)){lmg.logTag(LL::Error, "SETUP", "Victron settings initialization failed");return;}
     if(!telemetryMqtt.attach(ConfigManager,MY_MQTT_BROKER_IP,MY_MQTT_BROKER_PORT,MY_MQTT_USERNAME,MY_MQTT_PASSWORD,SMOKE_LOCAL_SECRETS)){
         lmg.logTag(LL::Error, "SETUP", "MQTT settings initialization failed");return;

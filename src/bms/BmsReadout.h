@@ -1,5 +1,6 @@
 #pragma once
 #include "BmsCommandPolicy.h"
+#include "runtime/AppRuntimeMetadata.h"
 #include <atomic>
 #include "victron/VictronReadout.h"
 namespace bms {
@@ -52,11 +53,9 @@ public:
     data["types"][key]=telemetry::typeName(c.type);data["support"][key]="jbd_readout";
    }
   },7);
-  for(unsigned i=0;i<4;++i){const char* keys[]={"charge_on","charge_off","discharge_on","discharge_off"};
-   const char* labels[]={"Enable charge MOS","Disable charge MOS","Enable discharge MOS","Disable discharge MOS"};
-   RuntimeFieldMeta meta;meta.sourceGroup="bms";meta.key=keys[i];meta.label=labels[i];meta.page="BMS";meta.card="bms";meta.group="bms";meta.order=60+i;meta.isButton=true;
-   manager.getRuntime().addRuntimeMeta(meta);
-   manager.getRuntime().registerRuntimeButton("bms",keys[i],[this,i](){MosRequest request;request.target=i<2?MosTarget::Charge:MosTarget::Discharge;request.state=(i%2)==0;request.deadline=millis()+30000;
+  for(unsigned i=0;i<4;++i){
+   if(!sbt::metadata::registerBmsButton(manager.getRuntime(),i))return false;
+   manager.getRuntime().registerRuntimeButton("bms",sbt::metadata::bmsButtonKeys[i],[this,i](){MosRequest request;request.target=i<2?MosTarget::Charge:MosTarget::Discharge;request.state=(i%2)==0;request.deadline=millis()+30000;
     {std::lock_guard<std::mutex> lock(mutex_);std::snprintf(request.id,sizeof(request.id),"ui-%lu",static_cast<unsigned long>(++uiRequest_));}
     queueRequest(request);
    });

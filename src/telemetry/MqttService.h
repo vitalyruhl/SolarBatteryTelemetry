@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <ConfigManager.h>
+#include "runtime/AppRuntimeMetadata.h"
 #include <mqtt/MQTTManager.h>
 #include <atomic>
 #include "MqttConfigMailbox.h"
@@ -76,10 +77,7 @@ class MqttService final : public Transport {
   view_.enabled=desired_.enabled;view_.connected=mqtt_.isConnected();view_.rejected=desired_.rootRejected||desired_.configRejected||publisher_.rootRejected();
   view_.cleanupPending=publisher_.retirementPending();view_.oldEndpointUnconfirmed=oldEndpointUnconfirmed_;
   view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
- static void field(ConfigManagerClass& cm,const char* source,const char* key,const char* label,int order,const char* card="MQTT",const char* unit=""){
-  RuntimeFieldMeta meta;meta.sourceGroup=source;meta.key=key;meta.label=label;meta.page=std::strcmp(source,"bms")==0?"BMS":std::strcmp(source,"victron")==0?"Victron":"MQTT";meta.card=card;meta.group=card;
-  meta.order=order;meta.isString=true;meta.unit=unit;cm.getRuntime().addRuntimeMeta(meta);
- }
+
 public:
  bool attach(ConfigManagerClass& cm,const char* broker,int port,const char* user,const char* password,bool enableDefault){
   if(ui_)return false; // Persistent settings must be constructed and registered only once.
@@ -113,17 +111,7 @@ public:
    data["ota"]=otaPaused_.load()?"paused":"ready";
    data["retirement"]=v.oldEndpointUnconfirmed?"previous broker cleanup unconfirmed":v.cleanupPending?"same broker cleanup pending":"complete";
   },6);
-  // Omit the redundant scope label: 65 entries would double the shared metadata vector.
-  // Keep the application within 64 UI fields so WiFi/BLE retain startup heap headroom.
-  field(cm,"telemetry","root","Active base topic",2);
-  field(cm,"telemetry","connection","MQTT connection",3);field(cm,"telemetry","enabled","MQTT enabled",4);
-  field(cm,"telemetry","rootValidation","Configuration validation",5);field(cm,"telemetry","snapshot","Latest snapshot",6);field(cm,"telemetry","ota","MQTT OTA pause",7);field(cm,"telemetry","retirement","Retained status cleanup",8);
-  for(Source source:{Source::Bms,Source::Victron}) {
-   const char* name=sourceName(source);
-   field(cm,name,"availability","Source availability",1,name);field(cm,name,"reason","Source reason",2,name);
-  }
-  for(const char* key:{"control_enabled","control_ready","control_pending","control_admission","control_result","control_reason","control_request_id","sample_sequence","sample_age_ms"})field(cm,"bms",key,key,50,"bms");
-  int order=10;for(const auto& c:channels)field(cm,sourceName(c.source),std::strchr(c.suffix,'/')+1,c.label,order++,sourceName(c.source),c.unit);
+  if(!sbt::metadata::registerTelemetryFields(cm.getRuntime()))return false;
   return true;
  }
  // Called once after loadAll and before server/tasks. Config::load intentionally omits callbacks.
