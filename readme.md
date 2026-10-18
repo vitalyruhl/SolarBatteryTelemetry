@@ -47,3 +47,14 @@ At the owner's request on October 16, every 60 seconds the collector republishes
 ## Planned isolated UART wiring
 
 See the [BMS and Victron ADuM1201 wiring plan](docs/isolated-uart-wiring.md) for the proposed SBT ESP pin assignment and harness preparation. The current firmware still uses BLE; UART transport is not implemented by this documentation change.
+
+
+## Local heap diagnostics
+
+The 1.0.1 diagnostic candidate aligns the one-second serial Health sample with normal allocator capabilities: `heap`, `min` and `largest` use `MALLOC_CAP_DEFAULT`. `internal` is the broader internal-memory total and must not be interpreted as available malloc memory. These fields describe different capabilities, not an unexplained sudden loss between loggers.
+
+With `CM_ENABLE_VERBOSE_LOGGING=1`, the application also installs its process-wide allocation-failure hook after serial setup. The first 16 events per boot, every 64th subsequent large failure, and all small failures up to 64 bytes are printed with `[HEAP-FAIL]`, including requested size, capabilities, allocator API, eligible free/largest memory and default free/largest memory. It uses ROM output and fixed storage, bypassing the regular logger. No existing hook was present when this integration was added; consumers must coordinate ownership if another subsystem later registers one. This diagnostic path is not qualified as generally ISR/cache-off safe. It and the periodic Health helper are omitted with verbose logging disabled.
+
+CM 4.6.1 also emits `[HTTP-HEAP]` request-boundary/integrity samples and removes avoidable app-info/theme-response buffers. Host tests and builds are software evidence only; the intermittent panic remains under investigation. Capture the first `[HEAP-FAIL]` event and its surrounding HTTP samples, and retain the matching ELF before rebuilding. No BMS command or device-control operation is needed for this investigation.
+
+Focused diagnostic host check: `tools/test/run-heap-failure-host-tests.ps1` (mocked allocator/ROM APIs, verbose 0 and 1). Build with `pio run -e usb`; uploading and serial monitoring remain owner-operated.

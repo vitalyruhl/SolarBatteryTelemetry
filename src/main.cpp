@@ -5,6 +5,7 @@
 #include <core/CoreWiFiServices.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+#include "diagnostics/HeapFailureDiagnostics.h"
 #include <WiFi.h>
 #include "settings.h"
 #include "smoke/SmokePolicy.h"
@@ -26,7 +27,9 @@ static bool appReady=false;
 static bool bleWorkerReady=false; // Written before web-server startup, then immutable.
 static void updateStatusLED();
 static void setupLogging();
+#if CM_ENABLE_VERBOSE_LOGGING
 static void printHealth(const char* stage);
+#endif
 static void logNetworkIpInfo(const char *context);
 static void applyAccessPointMacPriority();
 static bool isValidMacAddress(const String &value);
@@ -113,6 +116,7 @@ static void attachSmokeRuntime() {
 
 void setup() {
     setupLogging();
+    SBT_INSTALL_HEAP_FAILURE_DIAGNOSTICS();
     ConfigManager.setAppName(APP_NAME);
     ConfigManager.setAppTitle(APP_NAME);
     ConfigManager.setVersion(APP_VERSION);
@@ -166,20 +170,27 @@ void loop() {
     victronReadout.loop(now);
     bmsReadout.loop(now);
     bluetooth.loop(now);
-    
+
     const auto sample=victronReadout.snapshot();
     telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,now);
-    
+
     const auto battery=bmsReadout.snapshot();
     telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,now);
     telemetryMqtt.loop(now);
-    
-    // static uint32_t lastHealth=0;
-    // if(uint32_t(now-lastHealth)>=5000){lastHealth=now;printHealth("loop-alive");}
 
     updateStatusLED();
     cm::helpers::PulseOutput::loopAll();
     lmg.loop();
+
+
+#if CM_ENABLE_VERBOSE_LOGGING
+    static uint32_t lastHealthPrint = 0;
+    if (uint32_t(now - lastHealthPrint) >= 1000) {
+        lastHealthPrint = now;
+        printHealth("loop-alive");
+    }
+#endif
+
 
     delay(1);
 }
@@ -231,6 +242,7 @@ static void updateStatusLED()
         buildinLED.setPulseRepeat(/*count*/ 3, /*periodMs*/ 200, /*gapMs*/ 600);
         break;
     }
+
 }
 
 
@@ -239,11 +251,12 @@ static void setupLogging()
     Serial.begin(115200);
 
     auto serialOut = std::make_unique<cm::LoggingManager::SerialOutput>(Serial);
-    serialOut->setLevel(LL::Info);
+    // serialOut->setLevel(LL::Info);
+    serialOut->setLevel(LL::Debug);
     lmg.addOutput(std::move(serialOut));
 
     // Keep normal UART diagnostics without debug or trace output.
-    lmg.setGlobalLevel(LL::Info);
+    lmg.setGlobalLevel(LL::Debug);
     lmg.attachToConfigManager(LL::Info, LL::Debug, "");
 
 #if !CM_DISABLE_GUI_LOGGING
@@ -253,13 +266,18 @@ static void setupLogging()
 #endif
 }
 
+#if CM_ENABLE_VERBOSE_LOGGING
 // Keep recovery diagnostics independent of HTTP/JSON and omit all credentials.
 static void printHealth(const char* stage) {
-    lmg.logTag(LL::Debug, "Health", "%s ms=%lu heap=%u min=%u largest=%u wifi=%d rssi=%d\n",
-        stage, static_cast<unsigned long>(millis()), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
-        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
-        static_cast<int>(WiFi.status()), WiFi.isConnected() ? WiFi.RSSI() : 0);
+    multi_heap_info_t info{};
+    heap_caps_get_info(&info, MALLOC_CAP_DEFAULT);
+    lmg.logTag(LL::Debug, "Health", "%s ms=%lu heap=%u min=%u largest=%u internal=%u wifi=%d rssi=%d\n",
+        stage, static_cast<unsigned long>(millis()), static_cast<unsigned>(info.total_free_bytes),
+        static_cast<unsigned>(info.minimum_free_bytes), static_cast<unsigned>(info.largest_free_block),
+        static_cast<unsigned>(ESP.getFreeHeap()), static_cast<int>(WiFi.status()),
+        WiFi.isConnected() ? WiFi.RSSI() : 0);
 }
+#endif
 
 static void logNetworkIpInfo(const char *context)
 {
