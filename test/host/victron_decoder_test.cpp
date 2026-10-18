@@ -34,9 +34,8 @@ int main(){
     uint8_t frame[]={0xe1,0x02,0x10,0x02,0x58,0xa0,0x01,0x34,0x12,0x00,0x2a,0x60,0x81,0x19,0xdc,0x01,0x45,0xca,0x2e,0xe0,0x97,0xdf};
     Reading reading{};assert(decode(frame,sizeof(frame),key,hostDecrypt,reading)==DecodeResult::Ok);
     assert(reading.counter==0x1234&&reading.productId==0xa058);
-    expectNear(reading.values[15].number,128);expectNear(reading.values[18].number,48.07);expectNear(reading.values[19].number,2.6);
-    expectNear(reading.values[21].number,1.2);expectNear(reading.values[24].number,770);assert(reading.values[22].number==2);
-    assert(!reading.values[16].valid&&!reading.values[17].valid&&!reading.values[20].valid);
+    expectNear(reading.values[telemetry::channelIndex("victron/solar_power_w")].number,128);expectNear(reading.values[telemetry::channelIndex("victron/battery_voltage_v")].number,48.07);expectNear(reading.values[telemetry::channelIndex("victron/charge_current_a")].number,2.6);
+    expectNear(reading.values[telemetry::channelIndex("victron/load_current_a")].number,1.2);expectNear(reading.values[telemetry::channelIndex("victron/yield_today_wh")].number,770);assert(reading.values[telemetry::channelIndex("victron/charge_state")].number==2);
     for(std::size_t n=0;n<sizeof(frame);++n)assert(decode(frame,n,key,hostDecrypt,reading)!=DecodeResult::Ok);
     assert(decode(frame,sizeof(frame),key,cryptoFailure,reading)==DecodeResult::CryptoError);
     uint8_t extended[30]{};std::memcpy(extended,frame,sizeof(frame));
@@ -49,7 +48,7 @@ int main(){
     for(const auto& value:reading.values)assert(!value.valid);
     unavailable[10]=247;unavailable[14]=0xf6;unavailable[15]=0xff;
     assert(decode(unavailable,sizeof(unavailable),key,plain,reading)==DecodeResult::Ok);
-    assert(reading.values[22].number==6);expectNear(reading.values[19].number,-1);
+    assert(reading.values[telemetry::channelIndex("victron/charge_state")].number==6);expectNear(reading.values[telemetry::channelIndex("victron/charge_current_a")].number,-1);
     Receiver receiver;receiver.reset("waiting_for_advertisement");
     assert(receiver.receive(frame,sizeof(frame),key,100,-55,hostDecrypt));
     assert(receiver.snapshot(30099).available);assert(!receiver.snapshot(30100).available);

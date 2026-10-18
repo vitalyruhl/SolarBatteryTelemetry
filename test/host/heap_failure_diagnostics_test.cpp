@@ -4,11 +4,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <esp_heap_caps.h>
 #include "diagnostics/HeapFailureDiagnostics.h"
 static unsigned allocations=0;
 void* operator new(size_t size) {++allocations;if(void* p=std::malloc(size?size:1))return p;throw std::bad_alloc();}
 void operator delete(void* p) noexcept {std::free(p);}
-#if CM_ENABLE_VERBOSE_LOGGING
+#if CM_ENABLE_VERBOSE_LOGGING || SBT_ENABLE_HEAP_DIAGNOSTICS
 static esp_alloc_failed_hook_t registered=nullptr;
 static unsigned logs=0,queries=0;
 static char captured[384];
@@ -24,7 +25,7 @@ int ets_printf(const char* format,...) {
 int main() {
  const unsigned before=allocations;
  SBT_INSTALL_HEAP_FAILURE_DIAGNOSTICS();
-#if CM_ENABLE_VERBOSE_LOGGING
+#if CM_ENABLE_VERBOSE_LOGGING || SBT_ENABLE_HEAP_DIAGNOSTICS
  assert(registered);registered(4096,4,"heap_caps_malloc");
  assert(logs==1 && queries==2);
  assert(std::strstr(captured,"size=4096 caps=0x4 api=heap_caps_malloc"));

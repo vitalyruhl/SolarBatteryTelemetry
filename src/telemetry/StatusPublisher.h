@@ -9,21 +9,25 @@ inline bool formatCommandResult(const char* id,const char* phase,const char* rea
 }
 
 class StatusPublisher {
- struct Slot {char payload[512]{};bool valid=false,dirty=false;};Slot slots_[4]{};
+ struct Slot {bool valid=false,dirty=false;};Slot slots_[4]{};
+ // Match the existing health/control producers; each slot keeps independent retry ownership.
+ char payloads_[256+256+384+384]{};
+ static constexpr size_t capacity(unsigned index){return index<2?256:384;}
+ char* payload(unsigned index){return payloads_+(index<2?index*256:512+(index-2)*384);}
  uint32_t retryAt_=0;bool retry_=false;unsigned cursor_=0;
 public:
  bool set(unsigned index,const char* payload,bool force=false){
-  if(index>=4||!payload||std::strlen(payload)>=sizeof(slots_[0].payload))return false;
-  auto& slot=slots_[index];if(force||!slot.valid||std::strcmp(slot.payload,payload)){std::memcpy(slot.payload,payload,std::strlen(payload)+1);slot.valid=slot.dirty=true;}return true;
+  if(index>=4||!payload||std::strlen(payload)>=capacity(index))return false;
+  auto& slot=slots_[index];char* stored=this->payload(index);if(force||!slot.valid||std::strcmp(stored,payload)){std::memcpy(stored,payload,std::strlen(payload)+1);slot.valid=slot.dirty=true;}return true;
  }
- void clearResult(){slots_[3]={};}
+ void clearResult(){slots_[3]={};std::memset(payload(3),0,capacity(3));}
  void onConnected(){clearResult();for(auto& slot:slots_)slot.dirty=slot.valid;retry_=false;}
  void tick(uint32_t now,const char* root,Transport& wire){
   if(!wire.connected()||(retry_&&uint32_t(now-retryAt_)<250))return;retry_=false;
   constexpr const char* suffixes[]={"bms/health","victron/health","bms/control","bms/control/result"};
   for(unsigned i=0;i<4;++i){const auto index=(cursor_+i)%4;auto& slot=slots_[index];if(!slot.dirty)continue;
    char topic[topicLimit+1];if(!buildTopic(root,suffixes[index],topic,sizeof(topic)))return;
-   if(wire.publish(topic,slot.payload,index!=3)){slot.dirty=false;cursor_=(index+1)%4;}
+   if(wire.publish(topic,payload(index),index!=3)){slot.dirty=false;cursor_=(index+1)%4;}
    else {retry_=true;retryAt_=now;}return;
   }
  }

@@ -48,7 +48,7 @@ static void testDeadbands() {
         drain(publisher,wire,40001);assert(wire.sent.empty());
         publisher.setValue(i,Value{true,10+threshold*.2});drain(publisher,wire,45001);assert(wire.sent.size()==1);
     }
-    for(const std::size_t i:{0u,8u,14u,22u,23u}) {
+    for(const std::size_t i:{std::size_t(0),std::size_t(8),std::size_t(14),channelIndex("victron/charge_state"),channelIndex("victron/error_code")}) {
         Wire wire;Publisher publisher;publisher.setValue(i,Value{true,0});
         publisher.setSourceAvailable(channels[i].source,true);publisher.onConnected();drain(publisher,wire,0);wire.sent.clear();
         publisher.setValue(i,Value{true,1});drain(publisher,wire,5000);assert(wire.sent.size()==1);
@@ -79,9 +79,10 @@ void testMinuteRefresh(){
  drain(q,wrapped,0xea4fu);assert(wrapped.sent.empty());drain(q,wrapped,0xea50u);assert(wrapped.sent.size()==6);
 }
 int main() {
+    assert(channelCount==24);
     testMinuteRefresh();
     testDeadbands();
-    {Wire wire;Publisher publisher;publisher.setValue(28,{true,65535});
+    {Wire wire;Publisher publisher;publisher.setValue(channelIndex("bms/protection"),{true,65535});
      publisher.setSourceAvailable(Source::Bms,true);publisher.onConnected();drain(publisher,wire,0);
      const auto* result=find(wire,"SolarBatteryTelemetry/bms/protection");
      assert(result&&result->payload.find("unknown_15")!=std::string::npos&&publisher.delivered());}
@@ -98,7 +99,7 @@ int main() {
     assert(!buildTopic("x","status",topic,8));
     std::string suffix(64,'s');assert(buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
     suffix+='s';assert(!buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
-    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/pv_voltage_v","victron/pv_current_a","victron/battery_voltage_v","victron/charge_current_a","victron/battery_power_w","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh","bms/temperature_min_c","bms/cell_count","bms/temperature_sensor_count","bms/protection"};
+    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/battery_voltage_v","victron/charge_current_a","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh","bms/temperature_min_c","bms/protection"};
     assert(channelCount==sizeof(expected)/sizeof(expected[0]));
     for(std::size_t i=0;i<channelCount;++i) {
         assert(std::strcmp(channels[i].suffix,expected[i])==0);
@@ -107,20 +108,19 @@ int main() {
         assert(formatValue(channels[i],Value{},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     }
     assert(channels[0].type==FieldType::Boolean&&channels[14].type==FieldType::Unsigned);
-    assert(std::strcmp(channels[6].unit,"Ah")==0&&std::strcmp(channels[19].unit,"A")==0);
+    assert(std::strcmp(channels[6].unit,"Ah")==0&&std::strcmp(channels[channelIndex("victron/charge_current_a")].unit,"A")==0);
     assert(formatValue(channels[0],Value{true,0},payload,sizeof(payload))&&std::strcmp(payload,"false")==0);
     assert(formatValue(channels[0],Value{true,1},payload,sizeof(payload))&&std::strcmp(payload,"true")==0);
     assert(formatValue(channels[3],Value{true,0},payload,sizeof(payload))&&std::strcmp(payload,"0")==0);
     assert(formatValue(channels[3],Value{true,std::numeric_limits<double>::infinity()},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     assert(formatValue(channels[14],Value{true,-1},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
-    assert(formatValue(channels[22],Value{true,2},payload,sizeof(payload))&&std::strcmp(payload,"\"bulk\"")==0);
-    assert(formatValue(channels[22],Value{true,99},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
-    assert(formatValue(channels[16],Value{true,48},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
+    assert(formatValue(channels[channelIndex("victron/charge_state")],Value{true,2},payload,sizeof(payload))&&std::strcmp(payload,"\"bulk\"")==0);
+    assert(formatValue(channels[channelIndex("victron/charge_state")],Value{true,99},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload)));
     assert(std::strstr(payload,"SolarBatteryTelemetry/bms/charge_enabled/set"));
     assert(std::strstr(payload,"SolarBatteryTelemetry/bms/discharge_enabled/set"));
     assert(std::strstr(payload,"\"read_only\":true")&&std::strstr(payload,"\"commands_enabled\":false"));
-    assert(std::strstr(payload,"equalization")&&std::strstr(payload,"pv_current_a"));
+    assert(std::strstr(payload,"equalization")&&!std::strstr(payload,"pv_current_a")&&!std::strstr(payload,"pv_voltage_v")&&!std::strstr(payload,"battery_power_w"));
     assert(!capabilities("a",payload,16));
     assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload),true,true));
     assert(std::strstr(payload,"jbd_readout")&&std::strstr(payload,"\"source_state\":\"available\""));
@@ -186,21 +186,21 @@ int main() {
     assert(!find(interrupted,"SolarBatteryTelemetry/victron/solar_power_w"));
     // [MOCKED!] Source values exercise delta policy and wire-level equality.
     Wire delta;Publisher changed;
-    changed.setValue(15,Value{true,128});changed.setValue(18,Value{true,0});
+    changed.setValue(15,Value{true,128});changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});
     changed.setSourceAvailable(Source::Victron,true);changed.onConnected();drain(changed,delta,0);
     assert(delta.sent.size()==7&&find(delta,"SolarBatteryTelemetry/victron/battery_voltage_v")->payload=="0");
     delta.sent.clear();changed.setValue(15,Value{true,128.0000001});drain(changed,delta,5000);assert(delta.sent.empty());
     changed.setValue(15,Value{true,129});drain(changed,delta,9999);assert(delta.sent.empty());
     drain(changed,delta,10000);assert(delta.sent.size()==1&&delta.sent[0].payload=="129"&&!delta.sent[0].retain);
-    delta.sent.clear();changed.setValue(18,Value{});drain(changed,delta,15000);
+    delta.sent.clear();changed.setValue(channelIndex("victron/battery_voltage_v"),Value{});drain(changed,delta,15000);
     assert(delta.sent.size()==1&&delta.sent[0].payload=="null");
     delta.sent.clear();drain(changed,delta,20000);assert(delta.sent.empty());
-    changed.setValue(18,Value{true,0});drain(changed,delta,25000);assert(delta.sent.size()==1&&delta.sent[0].payload=="0");
+    changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});drain(changed,delta,25000);assert(delta.sent.size()==1&&delta.sent[0].payload=="0");
     delta.sent.clear();changed.setSourceAvailable(Source::Victron,false);drain(changed,delta,25001);
     assert(delta.sent.size()==2&&find(delta,"SolarBatteryTelemetry/victron/availability")->payload=="unavailable");
     assert(find(delta,"SolarBatteryTelemetry/capabilities")&&!find(delta,"SolarBatteryTelemetry/victron/battery_voltage_v"));
     delta.sent.clear();drain(changed,delta,30001);assert(delta.sent.empty());
-    changed.setValue(15,Value{true,129});changed.setValue(18,Value{true,0});changed.setSourceAvailable(Source::Victron,true);
+    changed.setValue(15,Value{true,129});changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});changed.setSourceAvailable(Source::Victron,true);
     drain(changed,delta,30002);assert(delta.sent.size()==4&&find(delta,"SolarBatteryTelemetry/victron/solar_power_w"));
     delta.sent.clear();changed.onConnected();drain(changed,delta,30003);assert(delta.sent.size()==7);
     delta.sent.clear();changed.requestRoot("delta-new",9);changed.tick(30004,delta);delta.online=true;changed.onConnected();delta.sent.clear();
@@ -238,7 +238,7 @@ int main() {
     for(std::size_t i=0;i<channelCount;++i)all.setValue(i,Value{true,1});
     all.setSourceAvailable(Source::Bms,true);all.setSourceAvailable(Source::Victron,true);all.onConnected();
     for(int tick=0;tick<20;++tick){const auto before=bounded.attempts;all.tick(0,bounded);assert(bounded.attempts-before<=4);}
-    assert(bounded.sent.size()==31&&all.delivered());
+    assert(bounded.sent.size()==29&&all.delivered());
     bounded.sent.clear();drain(all,bounded,5000);assert(bounded.sent.empty());
     std::puts("Telemetry contract: bounds, serialized deltas, absent sources, partial retries, reconnect/rename, wrap and OTA pause passed");
 }

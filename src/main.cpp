@@ -28,7 +28,7 @@ static bool appReady=false;
 static bool bleWorkerReady=false; // Written before web-server startup, then immutable.
 static void updateStatusLED();
 static void setupLogging();
-#if CM_ENABLE_VERBOSE_LOGGING
+#if CM_ENABLE_VERBOSE_LOGGING || SBT_ENABLE_HEAP_DIAGNOSTICS
 static void printHealth(const char* stage);
 #endif
 static void logNetworkIpInfo(const char *context);
@@ -87,9 +87,9 @@ static void setupNetworkDefaults() {
 }
 
 static bool attachSmokeRuntime() {
-    ConfigManager.addLivePage("Bluetooth",40);
-    ConfigManager.addLiveCard("Bluetooth","Transport",40);
-    ConfigManager.addLiveGroup("Bluetooth","Transport","Tests",40);
+    ConfigManager.addLivePage("Connectivity",40);
+    ConfigManager.addLiveCard("Connectivity","Connectivity",40);
+    ConfigManager.addLiveGroup("Connectivity","Connectivity","Bluetooth",40);
     ConfigManager.getRuntime().addRuntimeProvider("smoke",[](JsonObject& data) {
         data["scope"]="WiFi + Victron and BMS readout";
         data["workerReady"]=bleWorkerReady;
@@ -167,7 +167,7 @@ void loop() {
     lmg.loop();
 
 
-#if CM_ENABLE_VERBOSE_LOGGING
+#if CM_ENABLE_VERBOSE_LOGGING || SBT_ENABLE_HEAP_DIAGNOSTICS
     static uint32_t lastHealthPrint = 0;
     if (uint32_t(now - lastHealthPrint) >= 1000) {
         lastHealthPrint = now;
@@ -250,7 +250,7 @@ static void setupLogging()
 #endif
 }
 
-#if CM_ENABLE_VERBOSE_LOGGING
+#if CM_ENABLE_VERBOSE_LOGGING || SBT_ENABLE_HEAP_DIAGNOSTICS
 // Keep recovery diagnostics independent of HTTP/JSON and omit all credentials.
 static void printHealth(const char* stage) {
     multi_heap_info_t info{};

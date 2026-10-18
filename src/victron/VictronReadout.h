@@ -60,7 +60,7 @@ public:
         key_.setCallback([this](const String& value){mailbox_.setKey(value.c_str(),value.length());});
         bluetooth_=&bluetooth;
         manager.getRuntime().addRuntimeProvider("victron",[this](JsonObject& data){
-            const auto copy=snapshot();data["availability"]=copy.available?"available":"unavailable";data["reason"]=copy.reason;
+            const auto copy=snapshot();data["reason"]=copy.available?"ok":copy.reason;
             for(std::size_t i=0;i<telemetry::channelCount;++i){const auto& channel=telemetry::channels[i];
                 if(channel.source!=telemetry::Source::Victron)continue;
                 const char* name=std::strchr(channel.suffix,'/')+1;const auto value=copy.values[i];

@@ -37,10 +37,10 @@ template<class Decrypt> DecodeResult decode(const uint8_t* data,std::size_t size
     auto field=[&](unsigned index,uint16_t raw,uint16_t na,double scale,bool isSigned=false){
         if(raw!=na)next.values[index]={true,(isSigned?signed16(raw):int(raw))*scale};
     };
-    field(15,little16(plain+8),0xffff,1);field(18,little16(plain+2),0x7fff,0.01,true);
-    field(19,little16(plain+4),0x7fff,0.1,true);field(21,little16(plain+10)&0x1ff,0x1ff,0.1);
-    if(plain[0]!=0xff)next.values[22]={true,double(chargeState(plain[0]))};
-    field(23,plain[1],0xff,1);field(24,little16(plain+6),0xffff,10);
+    field(telemetry::channelIndex("victron/solar_power_w"),little16(plain+8),0xffff,1);field(telemetry::channelIndex("victron/battery_voltage_v"),little16(plain+2),0x7fff,0.01,true);
+    field(telemetry::channelIndex("victron/charge_current_a"),little16(plain+4),0x7fff,0.1,true);field(telemetry::channelIndex("victron/load_current_a"),little16(plain+10)&0x1ff,0x1ff,0.1);
+    if(plain[0]!=0xff)next.values[telemetry::channelIndex("victron/charge_state")]={true,double(chargeState(plain[0]))};
+    field(telemetry::channelIndex("victron/error_code"),plain[1],0xff,1);field(telemetry::channelIndex("victron/yield_today_wh"),little16(plain+6),0xffff,10);
     result=next;return DecodeResult::Ok;
 }
 class Receiver {

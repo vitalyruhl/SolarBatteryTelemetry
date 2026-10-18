@@ -42,7 +42,7 @@ public:
   bluetooth_=&bluetooth;
   manager.getRuntime().addRuntimeProvider("bms",[this](JsonObject& data){
    Snapshot copy;const char* reason;{std::lock_guard<std::mutex> lock(mutex_);copy=view_;reason=viewReason_;}
-   data["availability"]=copy.available?"available":"unavailable";data["reason"]=reason;
+   data["reason"]=copy.available?"ok":reason;
    data["sample_sequence"]=copy.sequence;
    if(copy.available)data["sample_age_ms"]=uint32_t(millis()-copy.receivedAt);else data["sample_age_ms"]=nullptr;
    auto c=control();data["control_enabled"]=c.enabled;data["control_ready"]=c.ready;data["control_pending"]=c.pending;
@@ -53,13 +53,10 @@ public:
     data["types"][key]=telemetry::typeName(c.type);data["support"][key]="jbd_readout";
    }
   },7);
-  for(unsigned i=0;i<4;++i){
-   if(!sbt::metadata::registerBmsButton(manager.getRuntime(),i))return false;
-   manager.getRuntime().registerRuntimeButton("bms",sbt::metadata::bmsButtonKeys[i],[this,i](){MosRequest request;request.target=i<2?MosTarget::Charge:MosTarget::Discharge;request.state=(i%2)==0;request.deadline=millis()+30000;
-    {std::lock_guard<std::mutex> lock(mutex_);std::snprintf(request.id,sizeof(request.id),"ui-%lu",static_cast<unsigned long>(++uiRequest_));}
-    queueRequest(request);
-   });
-  }
+  sbt::metadata::registerBmsCheckboxes(manager.getRuntime(),[this](unsigned i,bool state){MosRequest request;request.target=i==0?MosTarget::Charge:MosTarget::Discharge;request.state=state;request.deadline=millis()+30000;
+   {std::lock_guard<std::mutex> lock(mutex_);std::snprintf(request.id,sizeof(request.id),"ui-%lu",static_cast<unsigned long>(++uiRequest_));}
+   queueRequest(request);
+  });
   attached_=true;return true;
  }
  void afterLoad(){enabled_.store(controlEnabled_.get());mailbox_.setMac(mac_.get().c_str(),mac_.get().length());loop(millis());}

@@ -9,7 +9,22 @@ struct Wire:Transport{bool online=true,fail=false;std::vector<std::string> sent;
  bool connected()const override{return online;}bool publish(const char* t,const char* p,bool)override{if(fail||!online)return false;sent.emplace_back(std::string(t)+"="+p);return true;}
  void disconnect()override{online=false;}void configure(const char*)override{}
 };
-int main(){StatusPublisher p;Wire wire;
+static void boundedStatusSlots(){
+ StatusPublisher bounded;Wire wire;
+ const unsigned capacities[]={256,256,384,384};
+ for(unsigned i=0;i<4;++i){
+  const std::string accepted(capacities[i]-1,char('a'+i));
+  const std::string rejected(capacities[i],char('x'));
+  assert(bounded.set(i,accepted.c_str()));
+  assert(!bounded.set(i,rejected.c_str()));
+ }
+ wire.fail=true;bounded.tick(0,"root",wire);assert(wire.sent.empty());
+ wire.fail=false;for(unsigned i=0;i<4;++i)bounded.tick(250+i,"root",wire);
+ assert(wire.sent.size()==4);
+ for(unsigned i=0;i<4;++i)assert(wire.sent[i].substr(wire.sent[i].find('=')+1)==std::string(capacities[i]-1,char('a'+i)));
+ static_assert(sizeof(StatusPublisher)<=1344,"Status storage must retain producer limits without four universal slots");
+}
+int main(){boundedStatusSlots();StatusPublisher p;Wire wire;
  char output[512];assert(formatCommandResult("x","rejected","disabled",nullptr,false,output,sizeof(output)));
  assert(std::strstr(output,"\"charge_enabled\":null")&&std::strstr(output,"\"discharge_enabled\":null"));
  Value observed[channelCount]{};observed[8]={true,1};observed[9]={true,0};observed[4]={true,-2.5};

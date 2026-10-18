@@ -97,15 +97,16 @@ public:
   mqtt_.onMQTTDisconnect([this](){session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();});
   mqtt_.onMessage([this](const char* topic,const byte* payload,unsigned int length){message(topic,payload,length);});
   installCallbacks();
-  cm.addLivePage("MQTT",45);cm.addLivePage("BMS",50);cm.addLivePage("Victron",55);
+  cm.addLivePage("Connectivity",40);cm.addLivePage("BMS",50);cm.addLivePage("Victron",55);
   for(const char* card:{"MQTT","bms","victron"}){
-   const char* page=std::strcmp(card,"bms")==0?"BMS":std::strcmp(card,"victron")==0?"Victron":"MQTT";
-   cm.addLiveCard(page,card,45);cm.addLiveGroup(page,card,card,45);
+   const char* page=std::strcmp(card,"bms")==0?"BMS":std::strcmp(card,"victron")==0?"Victron":"Connectivity";
+   const char* liveCard=std::strcmp(card,"MQTT")==0?"Connectivity":card;
+   cm.addLiveCard(page,liveCard,45);cm.addLiveGroup(page,liveCard,card,45);
   }
   cm.getRuntime().addRuntimeProvider("telemetry",[this](JsonObject& data){
    View v;{std::lock_guard<std::mutex> guard(viewMutex_);v=view_;}
    data["scope"]="Victron readout and guarded JBD MOS controls";data["root"]=String(v.root);
-   data["connection"]=v.connected?"online":"offline";data["enabled"]=v.enabled?"enabled":"disabled";
+   data["connection"]=v.connected?"online":"offline";data["mqttEnabled"]=v.enabled?"enabled":"disabled";
    data["rootValidation"]=v.rejected?"rejected; last valid configuration retained":"valid";
    data["snapshot"]=v.delivered?"locally sent (QoS0)":"pending";
    data["ota"]=otaPaused_.load()?"paused":"ready";

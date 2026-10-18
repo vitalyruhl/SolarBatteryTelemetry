@@ -1,6 +1,6 @@
 # SolarBatteryTelemetry
 
-Firmware **1.0.2** uses compact CM 4.7.0 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Runtime pages separate Bluetooth, MQTT, BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
+Firmware **1.1.0** uses compact CM 4.7.0 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
 
 Historical readout acceptance: the collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
 
@@ -35,7 +35,7 @@ python tools/test/run-settings-registration-tests.py
 pio run -e usb
 ```
 
-The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current compact metadata candidate is 1.0.2. Known upstream deprecation/LTO warnings remain.
+The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current compact metadata candidate is 1.1.0. Known upstream deprecation/LTO warnings remain.
 
 Secrets, local build bindings, tooling state and detailed device captures are excluded from Git. Earlier smoke/preparation acceptance documents are retained as historical evidence.
 
@@ -52,13 +52,24 @@ See the [BMS and Victron ADuM1201 wiring plan](docs/isolated-uart-wiring.md) for
 
 ## Compact runtime metadata
 
-All 64 application descriptors use compact Float, Int, Bool, Text or Button
-metadata. Source keys, page/card/group placement, providers, MQTT payloads and
-guarded MOS callbacks remain unchanged. Numeric telemetry now shows its units
-and uses two decimal places, with three for minimum/maximum cell voltage and
-cell spread. Boolean telemetry uses the existing boolean presentation rather
-than raw textual true/false. Unknown or stale provider values remain null.
-Textual diagnostics remain text; no controls or fields were added.
+The 50 application descriptors use compact Float, Int, Bool, Text or Checkbox
+metadata. Connectivity combines the Bluetooth/MQTT live cards. Redundant MQTT
+identity/OTA/validation fields and source availability displays are omitted;
+Source reports ok or the concrete failure reason. Internal validation and OTA
+behavior are retained. Two observed-state MOS checkboxes replace four action
+buttons and keep the guarded request mailbox; an HTTP acknowledgment is not
+hardware confirmation. Unknown or stale provider values remain null.
+
+The MQTT channel list now has 24 entries. Cell/NTC counts and the three unused
+Victron placeholders are removed from values, capabilities and publication.
+Required JBD frame/cell/sensor-count validation remains. Numeric telemetry keeps
+its units, with three decimal places for the cell-voltage fields.
+
+CM's BLE configuration/IO split and the explicit SBT TX maximum of 9 bytes retain
+all 272-byte RX messages and both queue depths. Separate status buffers match
+the existing 256/384-byte producers. The normal USB build uses 80,464 static RAM
+bytes versus 85,232 at the checkpoint: 4,768 bytes recovered before startup.
+This is linker evidence, separate from measured runtime heap and stability.
 
 The [separate SBT plan and handoff](docs/plans/2026-10-18-compact-runtime-metadata.md)
 records implementation/build evidence and the conditional COM7 rollout. BME
@@ -69,8 +80,16 @@ behavior acceptance; no long-duration stability or HTTP-panic fix is claimed.
 
 The 1.0.1 diagnostic candidate aligns the one-second serial Health sample with normal allocator capabilities: `heap`, `min` and `largest` use `MALLOC_CAP_DEFAULT`. `internal` is the broader internal-memory total and must not be interpreted as available malloc memory. These fields describe different capabilities, not an unexplained sudden loss between loggers.
 
-With `CM_ENABLE_VERBOSE_LOGGING=1`, the application also installs its process-wide allocation-failure hook after serial setup. The first 16 events per boot, every 64th subsequent large failure, and all small failures up to 64 bytes are printed with `[HEAP-FAIL]`, including requested size, capabilities, allocator API, eligible free/largest memory and default free/largest memory. It uses ROM output and fixed storage, bypassing the regular logger. No existing hook was present when this integration was added; consumers must coordinate ownership if another subsystem later registers one. This diagnostic path is not qualified as generally ISR/cache-off safe. It and the periodic Health helper are omitted with verbose logging disabled.
+With `CM_ENABLE_VERBOSE_LOGGING=1` or `SBT_ENABLE_HEAP_DIAGNOSTICS=1`, the application installs its process-wide allocation-failure hook after serial setup. The first 16 events per boot, every 64th subsequent large failure, and all small failures up to 64 bytes are printed with `[HEAP-FAIL]`, including requested size, capabilities, allocator API, eligible free/largest memory and default free/largest memory. It uses ROM output and fixed storage, bypassing the regular logger. No existing hook was present when this integration was added; consumers must coordinate ownership if another subsystem later registers one. This diagnostic path is not qualified as generally ISR/cache-off safe. It and the periodic Health helper are omitted when both flags are disabled.
 
 The CM 4.6.1 diagnostic work added `[HTTP-HEAP]` request-boundary/integrity samples and removes avoidable app-info/theme-response buffers. Host tests and builds are software evidence only; the intermittent panic remains under investigation. Capture the first `[HEAP-FAIL]` event and its surrounding HTTP samples, and retain the matching ELF before rebuilding. No BMS command or device-control operation is needed for this investigation.
 
 Focused diagnostic host check: `tools/test/run-heap-failure-host-tests.ps1` (mocked allocator/ROM APIs, verbose 0 and 1). Build with `pio run -e usb`; uploading and serial monitoring remain owner-operated.
+
+
+Optional test instrumentation uses SBT_ENABLE_HEAP_DIAGNOSTICS=1 and
+-Wl,--wrap=sys_thread_sem_get. The normal build compiles it out. The probe calls
+the real getter once and reports NULL with task/caller and recent allocation
+failures using fixed storage; it does not preinitialize or repair the semaphore.
+The diagnostic profile remains local. See the handoff for exact firmware hashes
+and test-device results.
