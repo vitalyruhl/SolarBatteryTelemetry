@@ -15,6 +15,7 @@ struct MqttConfig {
 };
 // UI owns Config storage. The network owner only receives this fixed-size copy.
 class ConfigMailbox {
+  // bugfix: protect access to latest_ with mutex
  std::mutex mutex_;MqttConfig latest_;uint32_t revision_=1;unsigned invalid_=0;
 public:
  bool text(TextField field,const char* value,std::size_t size) {

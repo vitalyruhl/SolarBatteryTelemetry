@@ -11,6 +11,8 @@
 #include "telemetry/MqttService.h"
 #include "victron/VictronReadout.h"
 #include "bms/BmsReadout.h"
+#include "helpers/HelperModule.h"
+#include "logging/LoggingManager.h"
 
 static cm::BluetoothManager bluetooth;
 static telemetry::MqttService telemetryMqtt;
@@ -22,14 +24,32 @@ static auto& systemSettings=core.system;
 static cm::CoreWiFiServices wifiServices;
 static bool appReady=false;
 static bool bleWorkerReady=false; // Written before web-server startup, then immutable.
+static void updateStatusLED();
+static void setupLogging();
+static void printHealth(const char* stage);
+static void logNetworkIpInfo(const char *context);
+static void applyAccessPointMacPriority();
+static bool isValidMacAddress(const String &value);
 
-// Keep recovery diagnostics independent of HTTP/JSON and omit all credentials.
-static void printHealth(const char* stage) {
-    Serial.printf("[D] %s ms=%lu heap=%u min=%u largest=%u wifi=%d rssi=%d\n",
-        stage, static_cast<unsigned long>(millis()), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
-        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
-        static_cast<int>(WiFi.status()), WiFi.isConnected() ? WiFi.RSSI() : 0);
-}
+// Built-in LED pulse helper for WiFi status patterns.
+static cm::helpers::PulseOutput buildinLED(LED_BUILTIN, cm::helpers::PulseOutput::ActiveLevel::ActiveHigh);
+
+static cm::LoggingManager &lmg = cm::LoggingManager::instance();
+using LL = cm::LoggingManager::Level;
+
+static cm::CoreSettings &coreSettings = cm::CoreSettings::instance();
+static cm::CoreNtpSettings &ntpSettings = coreSettings.ntp;
+
+struct WiFiRoamingSettings
+{
+    Config<String> preferredApMac{ConfigOptions<String>{.key = "WiFiMacPrio", .name = "Preferred AP MAC", .category = "WiFi", .defaultValue = "", .sortOrder = 90}};
+
+    void attachTo(ConfigManagerClass &cfg)
+    {
+        cfg.addSetting(&preferredApMac);
+    }
+};
+WiFiRoamingSettings wifiRoamingSettings;
 
 static bool attachSystemSettings() {
     // Reuse CM's original object. Provision only a genuinely missing NVS value.
@@ -58,14 +78,13 @@ static void setupNetworkDefaults() {
         wifiSettings.subnet.set(MY_SUBNET_MASK);
         wifiSettings.dnsPrimary.set(MY_DNS_IP);
         ConfigManager.saveAll();
-        Serial.println("[I] Missing WiFi defaults provisioned; no forced reboot");
     }
 #endif
 }
 
 static void addRuntimeField(const char* source,const char* key,const char* label,int order,bool isBool=false,bool isString=false) {
     RuntimeFieldMeta meta;
-    meta.sourceGroup=source;meta.group="Smoke test";meta.page="Bluetooth";meta.card="Transport";
+    meta.sourceGroup=source;meta.group="Tests";meta.page="Bluetooth";meta.card="Transport";
     meta.key=key;meta.label=label;meta.order=order;meta.isBool=isBool;meta.isString=isString;meta.precision=0;
     ConfigManager.getRuntime().addRuntimeMeta(meta);
 }
@@ -73,13 +92,13 @@ static void addRuntimeField(const char* source,const char* key,const char* label
 static void attachSmokeRuntime() {
     ConfigManager.addLivePage("Bluetooth",40);
     ConfigManager.addLiveCard("Bluetooth","Transport",40);
-    ConfigManager.addLiveGroup("Bluetooth","Transport","Smoke test",40);
+    ConfigManager.addLiveGroup("Bluetooth","Transport","Tests",40);
     ConfigManager.getRuntime().addRuntimeProvider("smoke",[](JsonObject& data) {
-        data["scope"]="WiFi/UI/OTA + Victron and JBD BMS readout";
+        data["scope"]="WiFi + Victron and BMS readout";
         data["workerReady"]=bleWorkerReady;
         data["resetReason"]=static_cast<int>(esp_reset_reason());
     },5);
-    addRuntimeField("smoke","scope","Test scope",1,false,true);
+    addRuntimeField("smoke","scope","Scope",1,false,true);
     addRuntimeField("smoke","workerReady","BLE worker ready",2,true);
     addRuntimeField("smoke","resetReason","Reset reason",3);
     addRuntimeField("bluetooth","enabled","Bluetooth enabled",10,true);
@@ -93,22 +112,22 @@ static void attachSmokeRuntime() {
 }
 
 void setup() {
-    Serial.begin(115200);
+    setupLogging();
     ConfigManager.setAppName(APP_NAME);
     ConfigManager.setAppTitle(APP_NAME);
     ConfigManager.setVersion(APP_VERSION);
     ConfigManager.setSettingsPassword(SETTINGS_PASSWORD);
     // Keep the live dashboard focused on collector sources; serial health remains available.
     core.attachWiFi(ConfigManager,"Wi-Fi","Wi-Fi Settings",10);
-    if(!attachSystemSettings()){Serial.println("[E] System settings initialization failed");return;}
+    if(!attachSystemSettings()){lmg.logTag(LL::Error, "SETUP", "System settings initialization failed");return;}
     core.attachNtp(ConfigManager);
     bluetooth.attach(ConfigManager);
     attachSmokeRuntime();
-    if(!victronReadout.attach(ConfigManager,bluetooth)){Serial.println("[E] Victron settings initialization failed");return;}
+    if(!victronReadout.attach(ConfigManager,bluetooth)){lmg.logTag(LL::Error, "SETUP", "Victron settings initialization failed");return;}
     if(!telemetryMqtt.attach(ConfigManager,MY_MQTT_BROKER_IP,MY_MQTT_BROKER_PORT,MY_MQTT_USERNAME,MY_MQTT_PASSWORD,SMOKE_LOCAL_SECRETS)){
-        Serial.println("[E] MQTT settings initialization failed");return;
+        lmg.logTag(LL::Error, "SETUP", "MQTT settings initialization failed");return;
     }
-    if(!bmsReadout.attach(ConfigManager,bluetooth)){Serial.println("[E] BMS settings initialization failed");return;}
+    if(!bmsReadout.attach(ConfigManager,bluetooth)){lmg.logTag(LL::Error, "SETUP", "BMS settings initialization failed");return;}
     telemetryMqtt.bindBms(bmsReadout);
     bluetooth.setEventHandler([](const cm::BleEvent& event){victronReadout.onEvent(event);bmsReadout.onEvent(event);});
     ConfigManager.getOTAManager().setLifecycleObserver([](const OtaLifecycleEvent& event) {
@@ -123,49 +142,200 @@ void setup() {
     victronReadout.afterLoad();
     bmsReadout.afterLoad();
     Preferences readoutPrefs;
-    if(!readoutPrefs.begin("ConfigManager",false)){Serial.println("[E] Readout initialization failed");return;}
+    if(!readoutPrefs.begin("ConfigManager",false)){lmg.logTag(LL::Error, "SETUP", "Readout initialization failed");return;}
     const bool readoutReady=sbt::enableReadoutBluetoothOnce(readoutPrefs,bluetooth.settings().enabled,victronReadout.configured()||bmsReadout.configured());
     readoutPrefs.end();
-    if(!readoutReady){Serial.println("[E] Readout initialization failed");return;}
+    if(!readoutReady){lmg.logTag(LL::Error, "SETUP", "Readout initialization failed");return;}
     setupNetworkDefaults();
+
     // SmartSolar uses passive advertisements; JBD uses serialized telemetry and explicitly enabled MOS transactions.
     // Do not initialize NimBLE separately; the CM worker owns its first radio operation.
-    printHealth("before-ble");
     bleWorkerReady=bluetooth.begin();
-    if(!bleWorkerReady)Serial.println("[W] BLE worker unavailable; WiFi/UI/OTA remain available");
+    if(!bleWorkerReady)lmg.logTag(LL::Error, "SETUP", "BLE worker unavailable; WiFi/UI/OTA remain available");
     ConfigManager.startWebServer();
-#if defined(WIFI_FILTER_MAC_PRIORITY)
-    // Match SIL: allow the initial connection before enabling preferred-AP scans.
-    // The configured priority still applies to later reconnects and roaming.
-    ConfigManager.setAccessPointMacPriority(WIFI_FILTER_MAC_PRIORITY);
-#endif
-    printHealth("server-started");
-    appReady=true;
-    Serial.printf("[I] Collector runtime %s, reset=%d; passive Victron readout\n",APP_VERSION,static_cast<int>(esp_reset_reason()));
+    applyAccessPointMacPriority();
+    lmg.logTag(LL::Info, "SETUP", "Completed successfully. Starting main loop...");
 }
 
 void loop() {
-    if(!appReady){delay(100);return;}
+    // if(!appReady){delay(100);return;}
     ConfigManager.getWiFiManager().update();
     ConfigManager.handleClient();
+
     const uint32_t now=millis();
     victronReadout.loop(now);
     bmsReadout.loop(now);
     bluetooth.loop(now);
+    
     const auto sample=victronReadout.snapshot();
     telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,now);
+    
     const auto battery=bmsReadout.snapshot();
     telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,now);
     telemetryMqtt.loop(now);
-    static uint32_t lastHealth=0;
-    if(uint32_t(now-lastHealth)>=5000){lastHealth=now;printHealth("loop-alive");}
+    
+    // static uint32_t lastHealth=0;
+    // if(uint32_t(now-lastHealth)>=5000){lastHealth=now;printHealth("loop-alive");}
+
+    updateStatusLED();
+    cm::helpers::PulseOutput::loopAll();
+    lmg.loop();
+
     delay(1);
 }
 
-void onWiFiConnected() {
-    wifiServices.onConnected(ConfigManager,APP_NAME,systemSettings,core.ntp);
-    Serial.println("[I] WiFi ready; UI/OTA available");
-    printHealth("wifi-ready");
+void onWiFiConnected()
+{
+    wifiServices.onConnected(ConfigManager, APP_NAME, systemSettings, ntpSettings);
+    logNetworkIpInfo("onWiFiConnected");
+    lmg.logTag(LL::Debug, "WiFi", "Station Mode: http://%s", WiFi.localIP().toString().c_str());
 }
-void onWiFiDisconnected() {printHealth("wifi-disconnected");wifiServices.onDisconnected();}
-void onWiFiAPMode() {printHealth("wifi-ap-mode");wifiServices.onAPMode();}
+
+void onWiFiDisconnected()
+{
+    wifiServices.onDisconnected();
+    lmg.logTag(LL::Warn, "WiFi", "Disconnected");
+}
+
+void onWiFiAPMode()
+{
+    wifiServices.onAPMode();
+    logNetworkIpInfo("onWiFiAPMode");
+    lmg.logTag(LL::Debug, "WiFi", "AP Mode: http://%s", WiFi.softAPIP().toString().c_str());
+}
+
+
+static void updateStatusLED()
+{
+    static int lastMode = -1; // 1=AP, 2=CONNECTED, 3=CONNECTING
+
+    const bool connected = ConfigManager.getWiFiManager().isConnected();
+    const bool apMode = ConfigManager.getWiFiManager().isInAPMode();
+
+    const int mode = apMode ? 1 : (connected ? 2 : 3);
+    if (mode == lastMode)
+    {
+        return;
+    }
+    lastMode = mode;
+
+    switch (mode)
+    {
+    case 1: // AP mode: fast blink
+        buildinLED.setPulseRepeat(/*count*/ 1, /*periodMs*/ 200, /*gapMs*/ 0);
+        break;
+    case 2: // Connected: heartbeat
+        buildinLED.setPulseRepeat(/*count*/ 1, /*periodMs*/ 100, /*gapMs*/ 1500);
+        break;
+    case 3: // Connecting/disconnected: double blink
+        buildinLED.setPulseRepeat(/*count*/ 3, /*periodMs*/ 200, /*gapMs*/ 600);
+        break;
+    }
+}
+
+
+static void setupLogging()
+{
+    Serial.begin(115200);
+
+    auto serialOut = std::make_unique<cm::LoggingManager::SerialOutput>(Serial);
+    serialOut->setLevel(LL::Info);
+    lmg.addOutput(std::move(serialOut));
+
+    // Keep normal UART diagnostics without debug or trace output.
+    lmg.setGlobalLevel(LL::Info);
+    lmg.attachToConfigManager(LL::Info, LL::Debug, "");
+
+#if !CM_DISABLE_GUI_LOGGING
+    auto guiOut = std::make_unique<cm::LoggingManager::GuiOutput>(ConfigManager, 20);
+    guiOut->setLevel(LL::Error);
+    lmg.addOutput(std::move(guiOut));
+#endif
+}
+
+// Keep recovery diagnostics independent of HTTP/JSON and omit all credentials.
+static void printHealth(const char* stage) {
+    lmg.logTag(LL::Debug, "Health", "%s ms=%lu heap=%u min=%u largest=%u wifi=%d rssi=%d\n",
+        stage, static_cast<unsigned long>(millis()), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+        static_cast<int>(WiFi.status()), WiFi.isConnected() ? WiFi.RSSI() : 0);
+}
+
+static void logNetworkIpInfo(const char *context)
+{
+    const WiFiMode_t mode = WiFi.getMode();
+    const bool apActive = (mode == WIFI_AP) || (mode == WIFI_AP_STA);
+    const bool staConnected = (WiFi.status() == WL_CONNECTED);
+
+    if (apActive)
+    {
+        const IPAddress apIp = WiFi.softAPIP();
+        lmg.logTag(LL::Debug, "WiFi", "%s: AP IP: %s", context, apIp.toString().c_str());
+        lmg.logTag(LL::Debug, "WiFi", "%s: AP SSID: %s", context, WiFi.softAPSSID().c_str());
+    }
+
+    if (staConnected)
+    {
+        const IPAddress staIp = WiFi.localIP();
+        lmg.logTag(LL::Debug, "WiFi", "%s: STA IP: %s", context, staIp.toString().c_str());
+    }
+}
+
+static void applyAccessPointMacPriority()
+{
+    String preferredMac = wifiRoamingSettings.preferredApMac.get();
+    preferredMac.trim();
+
+#if defined(WIFI_FILTER_MAC_PRIORITY)
+    if (preferredMac.isEmpty())
+    {
+        preferredMac = WIFI_FILTER_MAC_PRIORITY;
+    }
+#endif
+
+    if (preferredMac.isEmpty())
+    {
+        lmg.logTag(LL::Debug, "WiFi", "AP MAC priority not configured");
+        return;
+    }
+
+    if (!isValidMacAddress(preferredMac))
+    {
+        lmg.logTag(LL::Warn, "WiFi", "AP MAC priority invalid: %s", preferredMac.c_str());
+        return;
+    }
+
+    ConfigManager.setAccessPointMacPriority(preferredMac.c_str());
+    lmg.logTag(LL::Info, "WiFi", "AP MAC priority set: %s", preferredMac.c_str());
+}
+
+static bool isValidMacAddress(const String &value)
+{
+    if (value.length() != 17)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < value.length(); ++i)
+    {
+        const char c = value.charAt(i);
+        if ((i + 1) % 3 == 0)
+        {
+            if (c != ':')
+            {
+                return false;
+            }
+            continue;
+        }
+
+        const bool isDigit = (c >= '0' && c <= '9');
+        const bool isUpperHex = (c >= 'A' && c <= 'F');
+        const bool isLowerHex = (c >= 'a' && c <= 'f');
+        if (!isDigit && !isUpperHex && !isLowerHex)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
