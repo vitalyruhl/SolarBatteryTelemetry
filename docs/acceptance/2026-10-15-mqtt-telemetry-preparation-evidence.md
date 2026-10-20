@@ -1,3 +1,9 @@
+> **Historical evidence; superseded on 2026-10-20.** This document preserves a previous plan and its original execution/acceptance record. Its tasks, checkboxes, version targets, device instructions and permissions are historical, not current execution authority.
+>
+> The [single current SIL/SBT/HA integration plan](../../../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) owns all subsequent work and current owner approvals, including the test-ESP build/upload, Settings/Live checks and at least five minutes of observation for each consumer. Earlier COM7 restrictions or approvals below do not override that current scope. Production uploads are not authorized. This consolidation performs documentation work only; implementation and testing start in a later step.
+
+---
+
 # MQTT Telemetry Preparation Implementation Plan
 
 > **For agentic workers:** Use superpowers:subagent-driven-development for the scoped implementation and independent review. No automatic commits.
@@ -8,7 +14,7 @@
 
 **Tech Stack:** Existing espressif32 7.0.1 / Arduino 2.0.17 / nodemcu-32s, reviewed local CM 4.5.0, NimBLE 2.5.1, PubSubClient 2.8, consumer LTO.
 
-**Spec:** Existing ../specs/2026-10-15-ble-integration-design.md, narrowed and amended by the owner's 2026-10-15 request and explicit follow-up: MQTT/channel preparation only, actual device decoding later; default root SolarBatteryTelemetry; BMS control channels reserved but all device access remains read-only. This plan supersedes the earlier aggregate-only MQTT proposal for this preparation stage.
+**Spec:** Existing ../superpowers/specs/2026-10-15-ble-integration-design.md, narrowed and amended by the owner's 2026-10-15 request and explicit follow-up: MQTT/channel preparation only, actual device decoding later; default root SolarBatteryTelemetry; BMS control channels reserved but all device access remains read-only. This plan supersedes the earlier aggregate-only MQTT proposal for this preparation stage.
 
 ## Global constraints
 

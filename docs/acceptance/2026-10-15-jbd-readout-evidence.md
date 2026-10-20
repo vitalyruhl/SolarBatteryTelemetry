@@ -1,3 +1,9 @@
+> **Historical evidence; superseded on 2026-10-20.** This document preserves a previous plan and its original execution/acceptance record. Its tasks, checkboxes, version targets, device instructions and permissions are historical, not current execution authority.
+>
+> The [single current SIL/SBT/HA integration plan](../../../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) owns all subsequent work and current owner approvals, including the test-ESP build/upload, Settings/Live checks and at least five minutes of observation for each consumer. Earlier COM7 restrictions or approvals below do not override that current scope. Production uploads are not authorized. This consolidation performs documentation work only; implementation and testing start in a later step.
+
+---
+
 # JBD BMS Readout Implementation Plan
 
 Approved scope: user requested integration on an extra branch. Resume the existing BLE integration plan, task 5, using the shipped CM worker and MQTT contract. Keep firmware version 0.3.0 during the current debugging cycle as previously requested. No automatic commits or pushes.

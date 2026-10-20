@@ -2,6 +2,12 @@
 
 Firmware **1.1.0** uses compact CM 4.7.0 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
 
+## Current integration work
+
+The [single SIL/SBT/HA integration plan](../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) and [integration specification](../SolarInverterLimiter/docs/control-planning/2026-10-20-integration-spec.md) are the current cross-repository entry points. SBT keeps collector responsibilities; SIL owns control policy. Older SBT plans now live under `docs/acceptance/` as historical evidence and do not create a second execution queue.
+
+The current checkpoint is documentation consolidation and local commits only. Implementation starts later. The canonical plan records the latest owner approvals and overrides earlier test-device instructions; no build, upload, live device command or HA configuration change is performed by this documentation checkpoint.
+
 Historical readout acceptance: the collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
 
 ## Configuration
@@ -19,7 +25,7 @@ See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout]
 
 ## Local ConfigManager dependency
 
-The active ignored `platformio.local.ini` binding selects the adjacent **ConfigManager 4.7.0** development checkout through an absolute local dependency. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/plans/2026-10-18-compact-runtime-metadata.md). No registry release or dependency publication is implied.
+The active ignored `platformio.local.ini` binding selects the adjacent **ConfigManager 4.7.0** development checkout through an absolute local dependency. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md). No registry release or dependency publication is implied.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
@@ -71,10 +77,11 @@ the existing 256/384-byte producers. The normal USB build uses 80,464 static RAM
 bytes versus 85,232 at the checkpoint: 4,768 bytes recovered before startup.
 This is linker evidence, separate from measured runtime heap and stability.
 
-The [separate SBT plan and handoff](docs/plans/2026-10-18-compact-runtime-metadata.md)
-records implementation/build evidence and the conditional COM7 rollout. BME
-acceptance and SBT upload are separate gates. The owner performs subsequent
-behavior acceptance; no long-duration stability or HTTP-panic fix is claimed.
+The [historical SBT migration evidence](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md)
+records the earlier implementation/build evidence and conditional COM7 rollout.
+Its original gates are historical; current test-device authorization is recorded
+in the canonical integration plan above. No long-duration stability or HTTP-panic
+fix is claimed by the earlier evidence.
 
 ## Local heap diagnostics
 

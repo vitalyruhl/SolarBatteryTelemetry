@@ -84,7 +84,7 @@ If OTA was disabled at boot, enabling it in the UI on the same WiFi connection r
 
 ## Build and acceptance
 
-Tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The selected ignored absolute override now uses the adjacent CM 4.7.0 development checkout. SBT requires CM >=4.7.0 for compact runtime descriptors; see the [migration handoff](plans/2026-10-18-compact-runtime-metadata.md). This local binding does not publish a CM dependency release. Both local environment dependency lists must retain all three dependencies; do not replace the tracked MQTT dependency when configuring the override. Commands build only:
+Tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The selected ignored absolute override now uses the adjacent CM 4.7.0 development checkout. SBT requires CM >=4.7.0 for compact runtime descriptors; see the [migration handoff](acceptance/2026-10-18-compact-runtime-metadata-evidence.md). This local binding does not publish a CM dependency release. Both local environment dependency lists must retain all three dependencies; do not replace the tracked MQTT dependency when configuring the override. Commands build only:
 
 ```powershell
 ./tools/test/run-bms-command-tests.ps1

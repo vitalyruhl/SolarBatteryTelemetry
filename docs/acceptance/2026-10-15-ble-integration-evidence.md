@@ -1,3 +1,9 @@
+> **Historical evidence; superseded on 2026-10-20.** This document preserves a previous plan and its original execution/acceptance record. Its tasks, checkboxes, version targets, device instructions and permissions are historical, not current execution authority.
+>
+> The [single current SIL/SBT/HA integration plan](../../../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) owns all subsequent work and current owner approvals, including the test-ESP build/upload, Settings/Live checks and at least five minutes of observation for each consumer. Earlier COM7 restrictions or approvals below do not override that current scope. Production uploads are not authorized. This consolidation performs documentation work only; implementation and testing start in a later step.
+
+---
+
 # BMS and Victron Telemetry Implementation Plan
 
 > **For agentic workers:** Use superpowers:subagent-driven-development or superpowers:executing-plans after owner approval. Work task by task; checkbox completion requires evidence. Reuse bounded workers where context remains useful. No automatic commits, pushes, releases, uploads or device writes.
@@ -8,11 +14,11 @@
 
 **Tech Stack:** PlatformIO espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s; ConfigManager development based on 4.4.10 after a separate 4.2.2 upgrade gate; PubSubClient 2.8; NimBLE-Arduino 2.5.1 trial pin; scoped MIT Victron C decoder and Apache-2.0 JBD protocol adaptation.
 
-**Spec:** [design proposal](../specs/2026-10-15-ble-integration-design.md). Both files are proposed, not yet approved for execution. This is the requested planning deliverable, not authorization to start implementing it.
+**Spec:** [design proposal](../superpowers/specs/2026-10-15-ble-integration-design.md). Both files are proposed, not yet approved for execution. This is the requested planning deliverable, not authorization to start implementing it.
 
 ## Global constraints
 
-- Preserve [project context](../../../project.info.md); no inverter, battery-control or energy-scheduling changes.
+- Preserve [project context](../../project.info.md); no inverter, battery-control or energy-scheduling changes.
 - Same board type as limiter; same physical test ESP32 later moves to shed.
 - Preserve existing ConfigManager consumers, settings keys and callbacks. Bluetooth stays opt-in and BLE-only.
 - Do not add NimBLE to ConfigManager library.json or include its headers from ConfigManager.h.
