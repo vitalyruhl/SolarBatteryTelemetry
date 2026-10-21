@@ -90,6 +90,11 @@ def main() -> None:
             raise RuntimeError("Unexpected temporary output target")
         (out / "ConfigManager.h").write_text("\n".join(parts), encoding="utf-8")
         (out / "RealMqttSettings.h").write_text(fixture, encoding="utf-8")
+        service = (ROOT / "src/telemetry/MqttService.h").read_text(encoding="utf-8")
+        methods = [method(service, signature) for signature in (
+            "void captureText(TextField field,const String& value)", "void captureInitial()", "void installCallbacks()")]
+        (out / "MqttServiceSettingsMethods.inc").write_text("\n".join(methods), encoding="utf-8")
+
         for name in ("Arduino.h", "Preferences.h"):
             (out / name).write_text('#pragma once\n#include "cm_platform_adapter.h"\n', encoding="utf-8")
         executable = out / "settings_registration_test.exe"
@@ -99,7 +104,7 @@ def main() -> None:
         if legacy_only:
             command.insert(1, "-DSBT_CM_LEGACY_ONLY")
         subprocess.run(command, check=True)
-        scenarios = ("legacy_failure",) if legacy_only else ("legacy_failure", "defaults", "migration", "new_wins", "migration_failure", "ota_missing", "ota_empty", "readout_enable_once")
+        scenarios = ("legacy_failure",) if legacy_only else ("legacy_failure", "defaults", "migration", "new_wins", "migration_failure", "ota_missing", "ota_empty", "readout_enable_once", "refresh_handoff")
         for scenario in scenarios:
             subprocess.run([str(executable), scenario], check=True)
     print(f"Settings regression: {len(scenarios)} real-CM scenarios passed; temporary artifacts removed")

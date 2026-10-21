@@ -62,6 +62,34 @@ static void testDeadbands() {
     publisher.setValue(3,Value{true,48.35});drain(publisher,wire,10250);assert(wire.sent.empty());
     publisher.setValue(3,Value{true,48.37});drain(publisher,wire,15250);assert(wire.sent.size()==1);
 }
+static void testConfigurableRefresh() {
+ Wire faster;Publisher p;p.setInterval(3600000);p.setRefreshInterval(5000);p.setSourceAvailable(Source::Bms,true);p.setValue(3,{true,48.12});p.onConnected();drain(p,faster,100);faster.sent.clear();
+ drain(p,faster,5099);assert(faster.sent.empty());drain(p,faster,5100);assert(find(faster,"SolarBatteryTelemetry/bms/voltage_v"));
+ Wire slower;Publisher q;q.setInterval(5000);q.setRefreshInterval(120000);q.setSourceAvailable(Source::Bms,true);q.setValue(3,{true,48.12});q.onConnected();drain(q,slower,100);slower.sent.clear();
+ q.setValue(3,{true,48.5});drain(q,slower,5100);assert(slower.sent.size()==1);slower.sent.clear();
+ drain(q,slower,60100);assert(slower.sent.empty());drain(q,slower,120100);assert(find(slower,"SolarBatteryTelemetry/bms/voltage_v")&&find(slower,"SolarBatteryTelemetry/status"));assert(slower.disconnects==0);
+ Wire bound;Publisher b;b.setInterval(3600000);b.setRefreshInterval(0);b.setSourceAvailable(Source::Bms,true);b.setValue(3,{true,48});b.onConnected();drain(b,bound,0xfffffff0u);bound.sent.clear();
+ drain(b,bound,0x1377u);assert(bound.sent.empty());drain(b,bound,0x1378u);assert(find(bound,"SolarBatteryTelemetry/bms/voltage_v"));bound.sent.clear();
+ b.setRefreshInterval(0xffffffffu);drain(b,bound,10000);assert(bound.sent.empty());drain(b,bound,3604984u);assert(find(bound,"SolarBatteryTelemetry/bms/voltage_v"));
+}
+static void testLiveRefreshChangesAndRetry() {
+ // A live change uses the last refresh anchor, without resetting delta/cache state.
+ Wire live;Publisher p;p.setInterval(3600000);p.setSourceAvailable(Source::Bms,true);p.setValue(3,{true,48});p.onConnected();drain(p,live,100);live.sent.clear();
+ drain(p,live,1000);p.setRefreshInterval(120000);
+ drain(p,live,60100);assert(live.sent.empty());drain(p,live,120099);assert(live.sent.empty());
+ drain(p,live,120100);assert(live.sent.size()==6);live.sent.clear();
+ drain(p,live,121100);p.setRefreshInterval(5000);
+ drain(p,live,125099);assert(live.sent.empty());drain(p,live,125100);assert(live.sent.size()==6);live.sent.clear();
+ // A shorter period already elapsed is due on the next tick, not one period after the edit.
+ p.setRefreshInterval(120000);drain(p,live,135100);assert(live.sent.empty());p.setRefreshInterval(5000);
+ drain(p,live,135101);assert(live.sent.size()==6&&live.disconnects==0);
+ // Accepted refresh metadata is not repeated when its unchanged scalar needs retry.
+ Wire partial;Publisher q;q.setInterval(3600000);q.setRefreshInterval(5000);q.setSourceAvailable(Source::Bms,true);q.setValue(3,{true,48});q.onConnected();drain(q,partial,0);partial.sent.clear();partial.failAt=5;
+ drain(q,partial,5000);assert(partial.sent.size()==5&&!q.delivered());const auto attempts=partial.attempts;
+ partial.failAt=-1;drain(q,partial,5249);assert(partial.attempts==attempts);drain(q,partial,5250);
+ assert(q.delivered()&&partial.sent.size()==6&&partial.sent.back().topic=="SolarBatteryTelemetry/bms/voltage_v"&&partial.sent.back().payload=="48");
+ partial.sent.clear();drain(q,partial,9999);assert(partial.sent.empty());drain(q,partial,10000);assert(partial.sent.size()==6);
+}
 void testMinuteRefresh(){
  Wire wire;Publisher p;p.setInterval(3600000);p.setSourceAvailable(Source::Bms,true);
  p.setValue(3,{true,48.12});p.setValue(8,{true,1});p.setValue(14,{true,0});p.onConnected();drain(p,wire,100);wire.sent.clear();
@@ -87,6 +115,8 @@ int main() {
      publisher.setValue(top,{true,21.5});publisher.setValue(bottom,{});drain(publisher,wire,5000);
      assert(find(wire,"SolarBatteryTelemetry/bms/temperature_1_c")->payload=="21.5");
      assert(find(wire,"SolarBatteryTelemetry/bms/temperature_2_c")->payload=="null");}
+    testConfigurableRefresh();
+    testLiveRefreshChangesAndRetry();
     testMinuteRefresh();
     testDeadbands();
     {Wire wire;Publisher publisher;publisher.setValue(channelIndex("bms/protection"),{true,65535});

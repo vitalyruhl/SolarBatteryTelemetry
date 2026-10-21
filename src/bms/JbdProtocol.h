@@ -33,7 +33,9 @@ inline uint16_t u16(const uint8_t* p){return (uint16_t(p[0])<<8)|p[1];}
 class Cycle {
  Snapshot pending_{},published_{};bool basic_=false,have_=false;uint32_t basicAt_=0,publishedAt_=0,sequence_=0;
 public:
- void reset(){pending_={};published_={};basic_=have_=false;}
+ // A transport interruption invalidates the partial pair, never its last complete sample.
+ void interrupt(){pending_={};basic_=false;}
+ void reset(){interrupt();published_={};have_=false;}
  bool accept(const Frame& f,uint32_t now){
   if(f.status){basic_=false;return false;}
   const auto* p=f.payload.data();
@@ -61,7 +63,7 @@ public:
   pending_.values[11]={true,low*.001};pending_.values[12]={true,high*.001};pending_.values[13]={true,(high-low)*.001};
   pending_.receivedAt=now;pending_.sequence=++sequence_;published_=pending_;publishedAt_=now;have_=true;return true;
  }
- Snapshot snapshot(uint32_t now) const {auto result=published_;result.available=have_&&uint32_t(now-publishedAt_)<30000;
+ Snapshot snapshot(uint32_t now,uint32_t timeoutMs=30000) const {auto result=published_;result.available=have_&&uint32_t(now-publishedAt_)<timeoutMs;
   if(!result.available)result.values={};return result;}
 };
 }

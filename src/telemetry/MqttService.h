@@ -53,7 +53,7 @@ class MqttService final : public Transport {
 
  bool oldEndpointUnconfirmed_=false;
  std::atomic<bool> otaPaused_{false};
- struct View {char root[rootLimit+1]="SolarBatteryTelemetry";bool enabled=false,connected=false,rejected=false,delivered=false,cleanupPending=false,oldEndpointUnconfirmed=false;int state=0;};
+ struct View {uint32_t fullRefreshMs=60000;char root[rootLimit+1]="SolarBatteryTelemetry";bool enabled=false,connected=false,rejected=false,delivered=false,cleanupPending=false,oldEndpointUnconfirmed=false;int state=0;};
  std::mutex viewMutex_;View view_;
  void captureText(TextField field,const String& value){mailbox_.text(field,value.c_str(),value.length());}
  void captureInitial() {
@@ -61,6 +61,7 @@ class MqttService final : public Transport {
   captureText(TextField::Username,ui_->username.get());captureText(TextField::Password,ui_->password.get());
   captureText(TextField::ClientId,ui_->clientId.get());captureText(TextField::Root,ui_->publishTopicBase.get());
   mailbox_.intervals(ui_->publishIntervalSec.get(),ui_->listenIntervalMs.get());
+  mailbox_.fullRefreshInterval(ui_->fullRefreshIntervalSec.get());
  }
  void installCallbacks(){
   ui_->enableMQTT.setCallback([this](bool v){mailbox_.enabled(v);});
@@ -72,11 +73,12 @@ class MqttService final : public Transport {
   ui_->publishTopicBase.setCallback([this](const String& v){captureText(TextField::Root,v);});
   ui_->publishIntervalSec.setCallback([this](float v){mailbox_.publishInterval(v);});
   ui_->listenIntervalMs.setCallback([this](int v){mailbox_.listenInterval(v);});
+  ui_->fullRefreshIntervalSec.setCallback([this](int v){mailbox_.fullRefreshInterval(v);});
  }
  void updateView(){std::lock_guard<std::mutex> guard(viewMutex_);std::memcpy(view_.root,publisher_.root(),std::strlen(publisher_.root())+1);
   view_.enabled=desired_.enabled;view_.connected=mqtt_.isConnected();view_.rejected=desired_.rootRejected||desired_.configRejected||publisher_.rootRejected();
   view_.cleanupPending=publisher_.retirementPending();view_.oldEndpointUnconfirmed=oldEndpointUnconfirmed_;
-  view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
+  view_.fullRefreshMs=desired_.fullRefreshMs;view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
 
 public:
  bool attach(ConfigManagerClass& cm,const char* broker,int port,const char* user,const char* password,bool enableDefault){
@@ -109,6 +111,7 @@ public:
    data["connection"]=v.connected?"online":"offline";data["mqttEnabled"]=v.enabled?"enabled":"disabled";
    data["rootValidation"]=v.rejected?"rejected; last valid configuration retained":"valid";
    data["snapshot"]=v.delivered?"locally sent (QoS0)":"pending";
+   data["full_refresh_interval_s"]=v.fullRefreshMs/1000u;
    data["ota"]=otaPaused_.load()?"paused":"ready";
    data["retirement"]=v.oldEndpointUnconfirmed?"previous broker cleanup unconfirmed":v.cleanupPending?"same broker cleanup pending":"complete";
   },6);
@@ -147,7 +150,7 @@ public:
    }
    auto& live=mqtt_.settings();
    live.enableMQTT.set(next.enabled);mqtt_.setServer(next.server,next.port);mqtt_.setCredentials(next.username,next.password);mqtt_.setClientId(next.clientId);
-   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);
+   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);
    if(reconnect&&next.enabled)configure(publisher_.root());
   }
   publisher_.requestRoot(desired_.root,std::strlen(desired_.root));

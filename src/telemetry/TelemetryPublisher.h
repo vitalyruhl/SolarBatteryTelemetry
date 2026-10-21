@@ -23,7 +23,7 @@ class Publisher {
  std::size_t cursor_=0,retireCursor_=0;
  uint32_t completedAt_=0,retryAt_=0;
  bool pending_=true,delivered_=false,retry_=false,paused_=false,rejected_=false,advertised_=false;
- uint32_t intervalMs_=5000;
+ uint32_t intervalMs_=5000,fullRefreshMs_=60000;
  void resetCycle(){pending_=true;cursor_=0;delivered_=false;std::memcpy(snapshot_,latest_,sizeof(latest_));std::memcpy(snapshotAvailable_,sourceAvailable_,sizeof(sourceAvailable_));}
  void clearSent(){sentFields_=0;sentMetadata_=0;}
  bool publishOne(Transport& wire,const char* root,const char* suffix,const char* value,bool retain) {
@@ -62,6 +62,7 @@ public:
  void setControl(bool enabled,bool ready){if(enabled==controlEnabled_&&ready==controlReady_)return;controlEnabled_=enabled;controlReady_=ready;sentMetadata_&=static_cast<uint8_t>(~((1u<<2)|(1u<<4)));resetCycle();}
  void onConnected(){advertised_=true;clearSent();forceFields_=0;refreshClockStarted_=false;retry_=false;resetCycle();}
  void setInterval(uint32_t ms){intervalMs_=ms<5000?5000:ms;}
+ void setRefreshInterval(uint32_t ms){fullRefreshMs_=ms<5000?5000:ms>3600000?3600000:ms;}
  // Configuration disable/reconnect uses the same bounded retirement path.
  bool retireCurrent(Transport& wire) {
   // Drain a prior advertised root first, then retire this connection's current advertisement too.
@@ -90,9 +91,9 @@ public:
   if(!wire.connected())return;
   if(retiring_[0]&&!retire(wire)){retry_=true;retryAt_=now;return;}
   // A receiver restart must recover unchanged data without restarting this collector.
-  // Refresh current metadata/valid fields every minute, independently of the delta interval.
+  // Refresh current metadata/valid fields on the configured cadence, independently of deltas.
   if(!refreshClockStarted_){refreshClockStarted_=true;refreshAt_=now;}
-  else if(static_cast<uint32_t>(now-refreshAt_)>=60000){refreshAt_=now;forceFields_=~uint32_t{0};sentMetadata_=0;resetCycle();}
+  else if(static_cast<uint32_t>(now-refreshAt_)>=fullRefreshMs_){refreshAt_=now;forceFields_=~uint32_t{0};sentMetadata_=0;resetCycle();}
   if(!pending_&&static_cast<uint32_t>(now-completedAt_)<intervalMs_)return;
   if(!pending_)resetCycle();
   // Four bounded cursor steps (at most four admissions). Skips never allocate or send.

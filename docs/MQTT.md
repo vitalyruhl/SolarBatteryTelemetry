@@ -8,7 +8,7 @@ The application persistent MQTT keys are `SBTMQTTEnable`, `SBTMQTTHost`, `SBTMQT
 
 The consumer registers application-owned `MqttUiSettings` for UI/persistence. The public MQTT singleton's canonical settings belong only to the application loop and are not registered with the configuration manager. Separate key namespaces avoid constructor-time collisions under CM settings registration semantics and remain compatible with the local CM comparison builds. The consumer intentionally does not call `MQTTManager::attach`, which would expose those live settings and install client-mutating callbacks. UI callbacks copy only bounded values/revisions into an owned mutex-protected mailbox; no client operation occurs there. After loadAll, initial values enter that mailbox before web-server startup because CM's persisted load does not invoke change callbacks. The application loop applies the latest snapshot, including changes received during OTA. Runtime readers get a synchronized copy, never UI Strings or live client state. This separation does not claim to fix all inherited CM settings-storage concurrency.
 
-Public standalone `begin`, `loop`, `settings`, `setServer`, `setCredentials`, `setClientId`, `setLastWill` and `publishRaw` are used. The existing module still publishes its normal `<base>/System-Info/ESP` and `/WiFi` metadata. The custom retained LWT is `<base>/status=offline`; online is published on connection/root change and on the full 60-second refresh, with local-admission retry. The existing CM connection callback starts this replay; `publishRaw` does not provide automatic change detection. CM System-Info publication keeps its existing 60-second interval. Publish success means local QoS0 admission, not broker acknowledgment.
+Public standalone `begin`, `loop`, `settings`, `setServer`, `setCredentials`, `setClientId`, `setLastWill` and `publishRaw` are used. The existing module still publishes its normal `<base>/System-Info/ESP` and `/WiFi` metadata. The custom retained LWT is `<base>/status=offline`; online is published on connection/root change and on each configured full refresh, with local-admission retry. The existing CM connection callback starts this replay; `publishRaw` does not provide automatic change detection. CM System-Info publication keeps its existing 60-second interval. Publish success means local QoS0 admission, not broker acknowledgment.
 
 ## Home Assistant display precision
 
@@ -72,7 +72,7 @@ A separate bounded status publisher caches at most one latest object per status 
 
 Values have explicit validity. Real values must be finite; unsigned values must be integral and within uint32 range; invalid booleans/enums are null. Unsupported and deferred fields serialize as null even if accidentally given a value, but initial unknown fields are not published. While a source stays available, a previously published valid field becoming invalid sends `null` once; valid zero remains `0` (or `false` for boolean fields). Source loss publishes availability/capabilities without a burst of null field messages. The JBD and Victron adapters establish source availability from validated, fresh protocol data.
 
-Home Assistant consumers should combine collector `<base>/status` and source `<base>/<source>/availability` for availability/freshness. Do not use a short `expire_after` based on the publish interval: unchanged values intentionally stay silent while the source is still fresh. Collector reconnect replays valid values; a newly subscribing consumer receives all currently valid values in the next fixed 60-second refresh because telemetry itself is non-retained.
+Home Assistant consumers should combine collector `<base>/status` and source `<base>/<source>/availability` for availability/freshness. Do not use a short `expire_after` based on the publish interval: unchanged values intentionally stay silent while the source is still fresh. Collector reconnect replays valid values; a newly subscribing consumer receives all currently valid values in the next full refresh because telemetry itself is non-retained. `SBTMQTTRefresh` (Settings > MQTT, Full refresh interval) controls this period from 5 to 3600 seconds, default 60, independently of the delta publish interval. A live change applies the new period against the last refresh without reconnecting; source changes/reconnects still publish immediately. Invalid UI values are rejected and out-of-range persisted values are bounded before use. The effective interval is available as `telemetry.full_refresh_interval_s` in runtime JSON.
 
 ## Bounds, root migration and OTA
 
@@ -113,9 +113,9 @@ See [JBD BMS readout](BMS.md) for configuration, freshness and protocol limits. 
 ## Deadband validation (2026-10-16)
 
 The focused telemetry contract test failed against the previous publisher when a sub-threshold change was sent, then passed after the change. Coverage includes every supported real channel, exact thresholds in both directions, accumulated changes, full payload precision, validity transitions, failed admissions, reconnect replay and discrete status fields. The MQTT lifecycle regression test also passed. The USB build succeeded (1,342,881 bytes flash; 80,360 bytes static RAM). Firmware remains 0.3.0 under the existing owner-requested debugging version freeze. This build has not been uploaded; live MQTT deadband acceptance is pending.
-### Fixed 60-second MQTT refresh
+### Configurable full MQTT refresh
 
-At the owner's request on October 16, every 60 seconds the collector republishes source/control availability, capabilities and all currently valid measurements, including unchanged values and differences below the deadband. This timer is independent of the normal publication interval. Between refreshes the 0.1-unit/1-W deadbands still apply. Unsupported fields remain unavailable; no fabricated values are emitted. Admission retry, bounded cursor work and OTA pause remain in force. A restarted Home Assistant recovers unchanged values within approximately one minute while the collector, sources and broker are available. Network failures or OTA pauses can extend that interval. This refresh does not replace the 5-second source-health heartbeat.
+The collector republishes source/control availability, capabilities and all currently valid measurements, including unchanged values and differences below the deadband. `SBTMQTTRefresh` sets this full-refresh period to 5-3600 seconds, default 60 (the original fixed period requested on October 16). This timer is independent of the normal publication interval. Between refreshes the 0.1-unit/1-W deadbands still apply. Unsupported fields remain unavailable; no fabricated values are emitted. Admission retry, bounded cursor work and OTA pause remain in force. A restarted Home Assistant recovers unchanged values within approximately the configured full-refresh period while the collector, sources and broker are available. Network failures or OTA pauses can extend that interval. This refresh does not replace the 5-second source-health heartbeat.
 
 
 Firmware 1.1.0 intentionally removes five optional channels from the schema:
@@ -146,10 +146,28 @@ an unavailable source produces no invented temperatures. An invalid NTC still
 rejects the basic/cell cycle under the existing JBD validation policy. Existing
 `temperature_min_c` / `temperature_max_c` keep their previous meaning across all
 validated sensors. The publisher has 26 descriptors and retains its 32-bit mask,
-fixed message bounds, delta thresholds and 60-second full refresh.
+fixed message bounds, delta thresholds and periodic full refresh (60 seconds by default).
 
 Focused checks: `tools/test/run-health-age-tests.ps1`,
 `tools/test/run-jbd-host-tests.ps1`, `tools/test/run-smoke-host-tests.ps1` and
 `tools/test/run-runtime-metadata-tests.ps1`. Synthetic fixtures exercise production
 logic; they do not establish physical sensor positions, BLE coverage or overnight
 stability. Production firmware deployment remains owner-operated.
+
+## 1.3.0 BMS availability tolerance and configurable refresh
+
+`BmsDataTimeout` controls BMS telemetry validity from its last complete cycle
+(1-9999 seconds, default 60, previously fixed at 30 seconds). Transient BLE/query
+failures no longer erase that cycle immediately. During recovery `/bms/health`
+reports `available: true`, `reason: "cached"`, and the unchanged sample sequence
+with its increasing age. Once the configured timeout expires, source availability
+changes to `unavailable`; no old sample is relabeled as newly measured. Runtime
+JSON includes the effective `bms.data_timeout_s`. Explicit source reconfiguration
+or OTA/pause invalidates immediately. Victron freshness is unchanged.
+
+MOS command readiness remains independent: disconnect/error cancels intent and
+blocks commands immediately, even while telemetry is retained in memory. Only a
+new complete valid cycle on a healthy connection can restore readiness, and the
+existing 30-second command freshness cap still applies. MQTT commands remain
+non-retained. Measurement retain flags are unchanged; `SBTMQTTRefresh` controls
+periodic resend, not the lifetime of a source measurement.

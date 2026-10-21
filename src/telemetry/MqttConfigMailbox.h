@@ -10,7 +10,7 @@ enum class TextField { Root, Server, Username, Password, ClientId };
 struct MqttConfig {
  char root[rootLimit+1]="SolarBatteryTelemetry";
  char server[129]{},username[129]{},password[129]{},clientId[65]="SolarBatteryTelemetry";
- uint16_t port=1883;uint32_t publishMs=5000;int listenMs=0;
+ uint16_t port=1883;uint32_t publishMs=5000,fullRefreshMs=60000;int listenMs=0;
  bool enabled=false,rootRejected=false,configRejected=false;
 };
 // UI owns Config storage. The network owner only receives this fixed-size copy.
@@ -43,6 +43,8 @@ public:
   latest_.listenMs=listenMs<0?0:listenMs>1000?1000:listenMs;++revision_;}
  void publishInterval(float seconds){std::lock_guard<std::mutex> guard(mutex_);
   latest_.publishMs=std::isfinite(seconds)&&seconds>=5?static_cast<uint32_t>(seconds>3600?3600000:seconds*1000):5000;++revision_;}
+ void fullRefreshInterval(int seconds){std::lock_guard<std::mutex> guard(mutex_);
+  latest_.fullRefreshMs=static_cast<uint32_t>(seconds<5?5:seconds>3600?3600:seconds)*1000u;++revision_;}
  void listenInterval(int value){std::lock_guard<std::mutex> guard(mutex_);latest_.listenMs=value<0?0:value>1000?1000:value;++revision_;}
  bool take(uint32_t& seen,MqttConfig& out){std::lock_guard<std::mutex> guard(mutex_);
   if(seen==revision_)return false;out=latest_;seen=revision_;return true;}
