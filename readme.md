@@ -1,6 +1,6 @@
 # SolarBatteryTelemetry
 
-Firmware **1.1.0** uses compact CM 4.7.0 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
+Firmware **1.2.0** uses compact CM 4.7.0 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
 
 ## Current integration work
 
@@ -41,7 +41,7 @@ python tools/test/run-settings-registration-tests.py
 pio run -e usb
 ```
 
-The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current compact metadata candidate is 1.1.0. Known upstream deprecation/LTO warnings remain.
+The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current candidate is 1.2.0. Known upstream deprecation/LTO warnings remain.
 
 Secrets, local build bindings, tooling state and detailed device captures are excluded from Git. Earlier smoke/preparation acceptance documents are retained as historical evidence.
 
@@ -58,7 +58,7 @@ See the [BMS and Victron ADuM1201 wiring plan](docs/isolated-uart-wiring.md) for
 
 ## Compact runtime metadata
 
-The 50 application descriptors use compact Float, Int, Bool, Text or Checkbox
+The 52 application descriptors use compact Float, Int, Bool, Text or Checkbox
 metadata. Connectivity combines the Bluetooth/MQTT live cards. Redundant MQTT
 identity/OTA/validation fields and source availability displays are omitted;
 Source reports ok or the concrete failure reason. Internal validation and OTA
@@ -66,7 +66,7 @@ behavior are retained. Two observed-state MOS checkboxes replace four action
 buttons and keep the guarded request mailbox; an HTTP acknowledgment is not
 hardware confirmation. Unknown or stale provider values remain null.
 
-The MQTT channel list now has 24 entries. Cell/NTC counts and the three unused
+The MQTT channel list now has 26 entries. Cell/NTC counts and the three unused
 Victron placeholders are removed from values, capabilities and publication.
 Required JBD frame/cell/sensor-count validation remains. Numeric telemetry keeps
 its units, with three decimal places for the cell-voltage fields.
@@ -100,3 +100,12 @@ the real getter once and reports NULL with task/caller and recent allocation
 failures using fixed storage; it does not preinitialize or repair the semaphore.
 The diagnostic profile remains local. See the handoff for exact firmware hashes
 and test-device results.
+
+## 1.2.0 changes
+
+Health generation now copies each source snapshot before reading its clock, preventing
+new BLE samples from appearing almost one uint32 clock period old. JBD NTC channels
+`bms/temperature_1_c` and `bms/temperature_2_c` preserve original sensor order
+(NTC 1 Top / NTC 2 Bottom); existing minimum/maximum topics remain. Missing sensors
+stay unavailable. No extra BLE query or control operation was added. This timestamp
+repair does not establish that historical overnight resets are fixed.

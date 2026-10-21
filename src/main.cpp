@@ -155,12 +155,14 @@ void loop() {
     bmsReadout.loop(now);
     bluetooth.loop(now);
 
+    // BLE dispatch may stamp a newer sample than the loop timestamp above.
+    // Copy each snapshot before capturing its health timestamp, including rollover.
     const auto sample=victronReadout.snapshot();
-    telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,now);
+    telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,millis());
 
     const auto battery=bmsReadout.snapshot();
-    telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,now);
-    telemetryMqtt.loop(now);
+    telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,millis());
+    telemetryMqtt.loop(millis());
 
     updateStatusLED();
     cm::helpers::PulseOutput::loopAll();

@@ -34,7 +34,9 @@ inline constexpr Channel channels[]={
  {Source::Victron,FieldType::Unsigned,"victron/error_code","Error code","",Support::InstantReadout},
  {Source::Victron,FieldType::Real,"victron/yield_today_wh","Yield today","Wh",Support::InstantReadout},
  {Source::Bms,FieldType::Real,"bms/temperature_min_c","Minimum NTC temperature","C"},
- {Source::Bms,FieldType::Protection,"bms/protection","Active protections",""}
+ {Source::Bms,FieldType::Protection,"bms/protection","Active protections",""},
+ {Source::Bms,FieldType::Real,"bms/temperature_1_c","NTC 1 (Top)","C"},
+ {Source::Bms,FieldType::Real,"bms/temperature_2_c","NTC 2 (Bottom)","C"}
 };
 inline constexpr std::size_t channelCount=sizeof(channels)/sizeof(channels[0]);
 // Resolve stable public suffixes at compile time; decoder slots follow the schema.

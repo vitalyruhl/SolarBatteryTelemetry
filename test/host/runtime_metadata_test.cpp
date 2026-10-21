@@ -71,7 +71,7 @@ int main() {
     RecordingRuntime runtime;
     assert(sbt::metadata::registerSmokeFields(runtime));
     assert(sbt::metadata::registerTelemetryFields(runtime));
-    assert(runtime.fields.size() == 50 && runtime.attempts == 50);
+    assert(runtime.fields.size() == 52 && runtime.attempts == 52);
     std::map<RuntimeFieldKind, unsigned> counts;
     std::set<std::pair<std::string, std::string>> identities;
     std::set<std::string> connectivityKeys;
@@ -88,7 +88,7 @@ int main() {
         }
         assert(field.kind != RuntimeFieldKind::Button);
     }
-    assert(counts[RuntimeFieldKind::Float] == 16);
+    assert(counts[RuntimeFieldKind::Float] == 18);
     assert(counts[RuntimeFieldKind::Int] == 10);
     assert(counts[RuntimeFieldKind::Bool] == 9);
     assert(counts[RuntimeFieldKind::Text] == 13);
@@ -107,6 +107,10 @@ int main() {
     assert(find(runtime, "bluetooth", "enabled").base.label == "Bluetooth enabled");
     expectKind(runtime, "telemetry", "mqttEnabled", RuntimeFieldKind::Text);
     assert(find(runtime, "telemetry", "mqttEnabled").base.label == "MQTT enabled");
+    expectKind(runtime, "bms", "temperature_1_c", RuntimeFieldKind::Float);
+    expectKind(runtime, "bms", "temperature_2_c", RuntimeFieldKind::Float);
+    assert(find(runtime, "bms", "temperature_1_c").base.label == "NTC 1 (Top)");
+    assert(find(runtime, "bms", "temperature_2_c").base.label == "NTC 2 (Bottom)");
     expectKind(runtime, "bms", "charging", RuntimeFieldKind::Bool);
     expectKind(runtime, "bms", "discharging", RuntimeFieldKind::Bool);
     for (const char* key : {"connection", "mqttEnabled", "snapshot", "retirement"}) expectKind(runtime, "telemetry", key, RuntimeFieldKind::Text);
@@ -177,5 +181,5 @@ int main() {
         assert(observed[0] && !observed[1]);
     }
 
-    std::puts("[MOCKED!] Runtime sink contract passed: 50 compact fields, connectivity routing and two MOS checkboxes");
+    std::puts("[MOCKED!] Runtime sink contract passed: 52 compact fields, connectivity routing and two MOS checkboxes");
 }

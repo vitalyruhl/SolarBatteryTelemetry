@@ -48,7 +48,9 @@ public:
    set(6,u16(p+4)*.01);set(7,u16(p+6)*.01);set(8,(p[20]&1)!=0);set(9,(p[20]&2)!=0);set(14,u16(p+16));
    set(telemetry::channelIndex("bms/protection"),u16(p+16));
    if(p[22]){double hottest=-273.1,coldest=1000;for(size_t i=0;i<p[22];++i){const double t=(int32_t(u16(p+23+2*i))-2731)*.1;
-     if(t < -50 || t > 150)return false;hottest=std::max(hottest,t);coldest=std::min(coldest,t);}set(10,hottest);set(telemetry::channelIndex("bms/temperature_min_c"),coldest);}
+     if(t < -50 || t > 150)return false;
+     if(i<2)set(telemetry::channelIndex(i==0?"bms/temperature_1_c":"bms/temperature_2_c"),t);
+     hottest=std::max(hottest,t);coldest=std::min(coldest,t);}set(10,hottest);set(telemetry::channelIndex("bms/temperature_min_c"),coldest);}
    basic_=true;basicAt_=now;return true;
   }
   if(f.reg!=4)return false;

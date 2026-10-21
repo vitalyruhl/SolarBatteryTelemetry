@@ -1,6 +1,6 @@
 # MQTT telemetry and guarded BMS commands
 
-The current working firmware adds passive SmartSolar Instant Readout to the 24-channel MQTT contract. Seven direct Victron fields can contain decoded readings; BMS is supplied by the JBD readout adapter. Unsupported PV voltage/current and deferred battery-power placeholders are omitted. Charge/discharge commands are implemented behind a default-disabled installation gate. See [Victron readout](Victron.md) for configuration, field limits and hardware acceptance.
+The current working firmware adds passive SmartSolar Instant Readout to the 26-channel MQTT contract. Seven direct Victron fields can contain decoded readings; BMS is supplied by the JBD readout adapter. Unsupported PV voltage/current and deferred battery-power placeholders are omitted. Charge/discharge commands are implemented behind a default-disabled installation gate. See [Victron readout](Victron.md) for configuration, field limits and hardware acceptance.
 
 ## Settings and ownership
 
@@ -18,7 +18,7 @@ The collector does not publish Home Assistant discovery configuration. Update th
 
 ## Fixed channels
 
-All 24 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained. The publish interval limits ordinary value updates to at most once per 5 seconds (or the configured interval when longer); it is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. At most four normal publications are attempted per policy tick, with a finite cursor and a 250 ms admission retry. A pending old-root retirement can add three sends before that normal budget; a root transition or configuration disconnect retires at most two advertised roots (six sends). CM's independent automatic online/System-Info messages are outside this preparation budget. A failed item does not advance its field cache or mark the snapshot delivered. Already accepted fields keep their cache across partial failures; retries wait at least 250 ms, including when a source transition replaces the pending snapshot. The fixed cache holds one `Value` per channel and a bitmask, using scalar serialization for equality and validity transitions, plus numeric deadbands for valid real measurements. There is no historical sample backlog.
+All 26 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained. The publish interval limits ordinary value updates to at most once per 5 seconds (or the configured interval when longer); it is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. At most four normal publications are attempted per policy tick, with a finite cursor and a 250 ms admission retry. A pending old-root retirement can add three sends before that normal budget; a root transition or configuration disconnect retires at most two advertised roots (six sends). CM's independent automatic online/System-Info messages are outside this preparation budget. A failed item does not advance its field cache or mark the snapshot delivered. Already accepted fields keep their cache across partial failures; retries wait at least 250 ms, including when a source transition replaces the pending snapshot. The fixed cache holds one `Value` per channel and a bitmask, using scalar serialization for equality and validity transitions, plus numeric deadbands for valid real measurements. There is no historical sample backlog.
 
 | Source | Leaf | Type | Unit / meaning |
 | --- | --- | --- | --- |
@@ -46,6 +46,8 @@ All 24 descriptors, labels, units, type/support names, state vocabulary and rese
 | victron | yield_today_wh | real | Wh |
 | bms | temperature_min_c | real | C; minimum of validated NTCs |
 | bms | protection | text | Named active protection bits, or none |
+| bms | temperature_1_c | real | C; NTC 1 (Top), first JBD sensor |
+| bms | temperature_2_c | real | C; NTC 2 (Bottom), second JBD sensor |
 
 Topics are `<base>/<source>/<leaf>`. Both `<base>/bms/availability` and `<base>/victron/availability` publish their retained `available`/`unavailable` state before scalar data. BMS availability follows complete JBD basic/cell cycles; Victron availability follows the readout freshness check. Availability and capabilities are sent once per connection/root and on source availability changes. `<base>/bms/control/availability` is retained `disabled`, `unavailable`, or `available`, reflecting installation enablement and current readiness. Capability metadata keeps schema_version=1 and the compatibility `reserved_commands` paths; `read_only` and `commands_enabled` now reflect the installation gate. Command readiness is separate from supported commands and enablement. No Victron writes or Home Assistant discovery are implemented. Bulk means the main charging stage, not an alarm.
 
@@ -125,3 +127,29 @@ retained cleanup and guarded MOS semantics remain. Consumers must tolerate the
 removed optional fields; SIL already represents unseen fields as unavailable.
 GUI-only MQTT root/OTA/validation fields are hidden without removing those
 settings or internal functions.
+
+## 1.2.0 source timing and positioned temperatures
+
+The application copies each source snapshot after BLE event dispatch, then captures
+`millis()` separately for its health generation. `sample_age_ms` uses modulo uint32
+subtraction, including real rollover; unavailable sources retain `null`. This avoids
+the previous T/T+1 ordering defect without clamping genuinely stale samples or
+changing sequence advancement, acquisition deadlines or guarded MOS readiness.
+The collector's 30-second source availability is an acquisition diagnostic. A SIL
+consumer's configurable transport/display deadline is independent and must not
+relax physical protection or command-validity limits. Silence is not an alarm.
+
+The appended non-retained Celsius topics `bms/temperature_1_c` (**NTC 1 (Top)**) and
+`bms/temperature_2_c` (**NTC 2 (Bottom)**) use the first two original JBD sensor slots.
+They are not sorted. No second sensor means no substituted value; zero sensors or
+an unavailable source produces no invented temperatures. An invalid NTC still
+rejects the basic/cell cycle under the existing JBD validation policy. Existing
+`temperature_min_c` / `temperature_max_c` keep their previous meaning across all
+validated sensors. The publisher has 26 descriptors and retains its 32-bit mask,
+fixed message bounds, delta thresholds and 60-second full refresh.
+
+Focused checks: `tools/test/run-health-age-tests.ps1`,
+`tools/test/run-jbd-host-tests.ps1`, `tools/test/run-smoke-host-tests.ps1` and
+`tools/test/run-runtime-metadata-tests.ps1`. Synthetic fixtures exercise production
+logic; they do not establish physical sensor positions, BLE coverage or overnight
+stability. Production firmware deployment remains owner-operated.

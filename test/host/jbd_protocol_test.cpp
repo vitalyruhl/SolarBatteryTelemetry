@@ -45,13 +45,24 @@ int main(){
   for(auto v:frame(3,payload))if(parser2.push(v,f))accepted=c.accept(f,100);
   for(auto v:b)if(parser2.push(v,f))c.accept(f,110);
   return std::make_pair(accepted,c.snapshot(110));};
+ const auto ntc1=channel("bms/temperature_1_c"), ntc2=channel("bms/temperature_2_c");
+ auto positioned=basic;put(positioned,23,2906);put(positioned,25,2946);auto top=readPair(positioned);
+ assert(top.second.available&&top.second.values[ntc1].valid&&top.second.values[ntc2].valid);
+ near(top.second.values[ntc1].number,17.5);near(top.second.values[ntc2].number,21.5);
+ near(top.second.values[minimum].number,17.5);near(top.second.values[10].number,21.5);
+ put(positioned,23,2946);put(positioned,25,2906);auto reverse=readPair(positioned);
+ near(reverse.second.values[ntc1].number,21.5);near(reverse.second.values[ntc2].number,17.5);
+ near(reverse.second.values[minimum].number,17.5);near(reverse.second.values[10].number,21.5);
+ positioned[22]=1;positioned.resize(25);auto single=readPair(positioned);
+ assert(single.second.available&&single.second.values[ntc1].valid&&!single.second.values[ntc2].valid);
+ near(single.second.values[ntc1].number,21.5);
  auto temps=basic;put(temps,23,2681);put(temps,25,2831);auto cold=readPair(temps);
  assert(cold.first&&cold.second.available);near(cold.second.values[minimum].number,-5);near(cold.second.values[10].number,10);
  temps[22]=0;temps.resize(23);auto empty=readPair(temps);
- assert(empty.second.available&&!empty.second.values[minimum].valid&&!empty.second.values[10].valid);
+ assert(empty.second.available&&!empty.second.values[minimum].valid&&!empty.second.values[10].valid);assert(!empty.second.values[ntc1].valid&&!empty.second.values[ntc2].valid);
  temps=basic;temps[22]=9;temps.resize(41);auto overflow=readPair(temps);assert(!overflow.first&&!overflow.second.available);
  temps=basic;put(temps,23,5000);auto invalid=readPair(temps);assert(!invalid.first&&!invalid.second.available);
- assert(cycle.snapshot(30109).available&&!cycle.snapshot(30110).available);cycle.reset();assert(!cycle.snapshot(111).available);
+ assert(cycle.snapshot(30109).available&&!cycle.snapshot(30110).available);assert(!cycle.snapshot(30110).values[ntc1].valid&&!cycle.snapshot(30110).values[ntc2].valid);cycle.reset();assert(!cycle.snapshot(111).available);
  // Cell-only, bad lengths/counts/status/checksum and truncated temperatures cannot refresh a sample.
  assert(!cycle.accept(decoded,112));
  for(size_t pos: {size_t(2),size_t(5),a.size()-1}){auto bad=a;bad[pos]^=1;parser.reset();int n=0;for(auto v:bad)n+=parser.push(v,decoded);assert(n==0);}
