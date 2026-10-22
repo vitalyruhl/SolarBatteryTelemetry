@@ -39,8 +39,8 @@ The implemented fields use the existing MQTT channel units:
 | `victron/yield_today_wh` | Wh |
 
 The protocol's unavailable sentinels become null, including load current when
-unsupported by the device. PV voltage/current remain unsupported; battery power
-remains reserved for later derivation. Charger output current is not net battery
+unsupported by the device. PV voltage/current and the deferred battery-power placeholder are omitted from
+the current GUI and MQTT schema. Charger output current is not net battery
 current. Unknown charge states map to `other`; state 255 is unavailable.
 
 A reading becomes unavailable 30 seconds after its last new data counter. This

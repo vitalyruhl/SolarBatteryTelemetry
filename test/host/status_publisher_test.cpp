@@ -5,11 +5,53 @@
 #include <cstdio>
 using namespace telemetry;
 // [MOCKED!] Only broker admission; retry and change tracking use production code.
-struct Wire:Transport{bool online=true,fail=false;std::vector<std::string> sent;
- bool connected()const override{return online;}bool publish(const char* t,const char* p,bool)override{if(fail||!online)return false;sent.emplace_back(std::string(t)+"="+p);return true;}
+struct Wire:Transport{bool online=true,fail=false;std::vector<std::string> sent;std::vector<bool> retained;
+ bool connected()const override{return online;}bool publish(const char* t,const char* p,bool retain)override{if(fail||!online)return false;sent.emplace_back(std::string(t)+"="+p);retained.push_back(retain);return true;}
  void disconnect()override{online=false;}void configure(const char*)override{}
 };
-int main(){StatusPublisher p;Wire wire;
+static void boundedStatusSlots(){
+ StatusPublisher bounded;Wire wire;
+ const unsigned capacities[]={256,256,384,384};
+ for(unsigned i=0;i<4;++i){
+  const std::string accepted(capacities[i]-1,char('a'+i));
+  const std::string rejected(capacities[i],char('x'));
+  assert(bounded.set(i,accepted.c_str()));
+  assert(!bounded.set(i,rejected.c_str()));
+ }
+ wire.fail=true;bounded.tick(0,"root",wire);assert(wire.sent.empty());
+ wire.fail=false;for(unsigned i=0;i<4;++i)bounded.tick(250+i,"root",wire);
+ assert(wire.sent.size()==4);
+ for(unsigned i=0;i<4;++i)assert(wire.sent[i].substr(wire.sent[i].find('=')+1)==std::string(capacities[i]-1,char('a'+i)));
+ static_assert(sizeof(StatusPublisher)<=1472,"Status storage must retain producer limits without four universal slots");
+}
+static void restartAndRefresh(){
+ StatusPublisher p;Wire wire;p.setRefreshInterval(60000);
+ p.set(2,"current-control");p.set(3,"idle-no-request");p.set(4,"confirmed-pair");
+ for(unsigned i=0;i<5;++i)p.tick(i,"root",wire);
+ assert(wire.sent.size()==3);
+ for(size_t i=0;i<wire.sent.size();++i)assert(wire.retained[i]==(wire.sent[i].find("/result=")==std::string::npos));
+ p.tick(59999,"root",wire);assert(wire.sent.size()==3);
+ for(unsigned i=0;i<5;++i)p.tick(60000+i,"root",wire);
+ assert(wire.sent.size()==6);
+ p.set(3,"acknowledged-old");p.tick(60010,"root",wire);wire.sent.clear();wire.retained.clear();
+ p.onConnected();p.set(3,"idle-new-session");p.clearPermissions();
+ for(unsigned i=0;i<5;++i)p.tick(60011+i,"root",wire);
+ for(const auto& value:wire.sent){assert(value.find("acknowledged-old")==std::string::npos);assert(value.find("confirmed-pair")==std::string::npos);}
+ assert(wire.sent.size()==2);
+ char pair[128];assert(formatAcknowledgedPermissions("aa:bb:cc:dd:ee:ff",1,pair,sizeof(pair)));
+ assert(std::strstr(pair,"\"charge_enabled\":true")&&std::strstr(pair,"\"discharge_enabled\":false"));
+}
+int main(){restartAndRefresh();boundedStatusSlots();StatusPublisher p;Wire wire;
+ char control[384];
+ assert(formatControlStatus(true,true,false,"0123456789abcdef0123456789abcdef","ok",false,3,"unknown",control,sizeof(control)));
+ assert(std::strstr(control,"\"permissions_known\":false")&&std::strstr(control,"\"requested_charge_enabled\":null")&&std::strstr(control,"\"requested_discharge_enabled\":null"));
+ for(unsigned mask=0;mask<4;++mask){
+  assert(formatControlStatus(true,false,true,"0123456789abcdef0123456789abcdef","busy",true,mask,"different",control,sizeof(control)));
+  assert(std::strstr(control,mask&1?"\"requested_charge_enabled\":true":"\"requested_charge_enabled\":false"));
+  assert(std::strstr(control,mask&2?"\"requested_discharge_enabled\":true":"\"requested_discharge_enabled\":false"));
+  assert(std::strstr(control,"\"mos_readback\":\"different\""));
+ }
+ assert(!formatControlStatus(true,true,false,"session","ok",true,1,"matching",control,8));
  char output[512];assert(formatCommandResult("x","rejected","disabled",nullptr,false,output,sizeof(output)));
  assert(std::strstr(output,"\"charge_enabled\":null")&&std::strstr(output,"\"discharge_enabled\":null"));
  Value observed[channelCount]{};observed[8]={true,1};observed[9]={true,0};observed[4]={true,-2.5};

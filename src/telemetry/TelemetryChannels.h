@@ -27,23 +27,26 @@ inline constexpr Channel channels[]={
  {Source::Bms,FieldType::Real,"bms/cell_voltage_delta_v","Cell voltage spread","V"},
  {Source::Bms,FieldType::Unsigned,"bms/alarm_bits","Alarm bits",""},
  {Source::Victron,FieldType::Real,"victron/solar_power_w","Solar power","W",Support::InstantReadout},
- {Source::Victron,FieldType::Real,"victron/pv_voltage_v","PV voltage (unsupported)","V",Support::Unsupported},
- {Source::Victron,FieldType::Real,"victron/pv_current_a","PV current (unsupported)","A",Support::Unsupported},
  {Source::Victron,FieldType::Real,"victron/battery_voltage_v","Charger battery voltage","V",Support::InstantReadout},
  {Source::Victron,FieldType::Real,"victron/charge_current_a","Charger output current","A",Support::InstantReadout},
- {Source::Victron,FieldType::Real,"victron/battery_power_w","Charger battery power (derived later)","W",Support::DerivedLater},
  {Source::Victron,FieldType::Real,"victron/load_current_a","Load current","A",Support::InstantReadout},
  {Source::Victron,FieldType::State,"victron/charge_state","Charge state","",Support::InstantReadout},
  {Source::Victron,FieldType::Unsigned,"victron/error_code","Error code","",Support::InstantReadout},
  {Source::Victron,FieldType::Real,"victron/yield_today_wh","Yield today","Wh",Support::InstantReadout},
  {Source::Bms,FieldType::Real,"bms/temperature_min_c","Minimum NTC temperature","C"},
- {Source::Bms,FieldType::Unsigned,"bms/cell_count","Cell count",""},
- {Source::Bms,FieldType::Unsigned,"bms/temperature_sensor_count","NTC sensor count",""},
- {Source::Bms,FieldType::Protection,"bms/protection","Active protections",""}
+ {Source::Bms,FieldType::Protection,"bms/protection","Active protections",""},
+ {Source::Bms,FieldType::Real,"bms/temperature_1_c","NTC 1 (Top)","C"},
+ {Source::Bms,FieldType::Real,"bms/temperature_2_c","NTC 2 (Bottom)","C"}
 };
 inline constexpr std::size_t channelCount=sizeof(channels)/sizeof(channels[0]);
+// Resolve stable public suffixes at compile time; decoder slots follow the schema.
+inline constexpr std::size_t channelIndex(const char* suffix) {
+ for(std::size_t i=0;i<channelCount;++i){std::size_t n=0;while(channels[i].suffix[n]&&suffix[n]&&channels[i].suffix[n]==suffix[n])++n;
+  if(channels[i].suffix[n]==suffix[n])return i;}
+ return channelCount;
+}
 inline constexpr const char* chargeStates[]={"off","fault","bulk","absorption","float","storage","equalization","other","unavailable"};
-inline constexpr const char* commandSuffixes[]={"bms/charge_enabled/set","bms/discharge_enabled/set"};
+inline constexpr const char* commandSuffixes[]={"bms/charge_enabled/set","bms/discharge_enabled/set","bms/permissions/set","bms/control_enabled/set","bms/emergency_off/set"};
 inline const char* sourceName(Source s){return s==Source::Bms?"bms":"victron";}
 inline const char* supportName(Support s){return s==Support::JbdReadout?"jbd_readout":s==Support::InstantReadout?"instant_readout":s==Support::Unsupported?"unsupported":s==Support::DerivedLater?"derived_later":"adapter_missing";}
 inline const char* typeName(FieldType t){switch(t){case FieldType::Boolean:return "bool";case FieldType::Real:return "real";case FieldType::Unsigned:return "unsigned";case FieldType::State:return "enum";case FieldType::Protection:return "text";}return "unknown";}
@@ -96,11 +99,11 @@ inline bool formatValue(const Channel& c,Value v,char* out,std::size_t capacity)
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
 inline bool capabilities(const char* root,char* out,std::size_t capacity,bool victronAvailable=false,bool bmsAvailable=false,bool controlsEnabled=false) {
- char a[topicLimit+1],b[topicLimit+1];
- if(!buildTopic(root,commandSuffixes[0],a,sizeof(a))||!buildTopic(root,commandSuffixes[1],b,sizeof(b)))return false;
+ char a[topicLimit+1],b[topicLimit+1],c[topicLimit+1];
+ if(!buildTopic(root,commandSuffixes[0],a,sizeof(a))||!buildTopic(root,commandSuffixes[1],b,sizeof(b))||!buildTopic(root,commandSuffixes[2],c,sizeof(c)))return false;
  const int n=std::snprintf(out,capacity,
-  "{\"schema_version\":1,\"read_only\":%s,\"commands_enabled\":%s,\"reserved_commands\":[\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"jbd_readout\",\"victron\":\"instant_readout\"},\"unsupported\":[\"victron/pv_voltage_v\",\"victron/pv_current_a\"],\"derived_later\":[\"victron/battery_power_w\"],\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
-  controlsEnabled?"false":"true",controlsEnabled?"true":"false",a,b,bmsAvailable&&victronAvailable?"available":bmsAvailable||victronAvailable?"partial":"unavailable",bmsAvailable&&victronAvailable?"ok":bmsAvailable?"victron_unavailable":victronAvailable?"bms_unavailable":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
+  "{\"schema_version\":1,\"read_only\":%s,\"commands_enabled\":%s,\"reserved_commands\":[\"%s\",\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"jbd_readout\",\"victron\":\"instant_readout\"},\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
+  controlsEnabled?"false":"true",controlsEnabled?"true":"false",a,b,c,bmsAvailable&&victronAvailable?"available":bmsAvailable||victronAvailable?"partial":"unavailable",bmsAvailable&&victronAvailable?"ok":bmsAvailable?"victron_unavailable":victronAvailable?"bms_unavailable":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
 }

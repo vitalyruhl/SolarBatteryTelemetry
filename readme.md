@@ -1,17 +1,23 @@
 # SolarBatteryTelemetry
 
-Firmware **0.3.0** reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a full 60-second refresh. Runtime pages separate Bluetooth, MQTT, BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
+Firmware **1.4.5** uses compact CM runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
 
-The collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
+## Current integration work
+
+The [single SIL/SBT/HA integration plan](../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) and [integration specification](../SolarInverterLimiter/docs/control-planning/2026-10-20-integration-spec.md) are the current cross-repository entry points. SBT keeps collector responsibilities; SIL owns control policy. Older SBT plans now live under `docs/acceptance/` as historical evidence and do not create a second execution queue.
+
+Firmware 1.4.5 is installed and the owner accepted normal daily operation. It includes retained Victron error/yield readings, separately timestamped display history, actual MOS feedback and the shared persistent control gate. The [current acceptance record](docs/acceptance/2026-10-22-mos-software-request.md#145-actual-state-contract-acceptance) describes the bounded checks; the historical SBT panic/HTTP delivery issue remains unresolved. The canonical plan remains the cross-repository execution record; historical acceptance documents do not authorize new device actions.
+
+Historical readout acceptance: the collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
 
 ## Configuration
 
 Local credentials stay in ignored `src/secret/secrets.h`; only placeholders are tracked in `secrets.example.h`. The local reserved IPv4 address is 192.168.2.21.
 
 - Bluetooth > Victron: Instant Readout MAC and encryption key.
-- Bluetooth > BMS > Readout: JBD peer MAC; empty disables that source.
+- Bluetooth > BMS > Readout: JBD peer MAC and data timeout (1-9999 seconds, default 60); an empty MAC disables that source.
 - BMS control enabled: commissioning gate, default false. Leave disabled until installation qualification.
-- MQTT: enabled, broker, credentials, base topic and publication interval.
+- MQTT: enabled, broker, credentials, base topic, delta publication interval and full refresh interval (5-3600 seconds, default 60).
 
 `VICTRON_READOUT_MAC`, `VICTRON_READOUT_KEY` and `BMS_READOUT_MAC` seed initial settings. Persisted edits remain authoritative. Bluetooth is enabled once for the first configured readout upgrade; later user disables survive reboot. Existing OTA authentication is provisioned only if missing.
 
@@ -19,14 +25,16 @@ See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout]
 
 ## Local ConfigManager dependency
 
-The active ignored `platformio.local.ini` binding selects **ConfigManager 4.6.0**, commit `554869da7efc98e0c1874e74bf0c78d4bcd1664a`, through an absolute local dependency. This includes the reviewed shared BLE transport additions. The tracked dependency declaration is unchanged; reproducing the local build requires an equivalent selected CM revision, not just the same version string.
+Integration was also built against a reviewed **ConfigManager 4.8.0** development snapshot. The ignored `platformio.local.ini` binding selects an absolute local development checkout; its current version must be verified separately. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md). No registry release or dependency publication is implied.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
 ## Focused validation
 
 ```powershell
+python tools/test/run-bms-readout-tests.py
 ./tools/test/run-smoke-host-tests.ps1
+./tools/test/run-runtime-metadata-tests.ps1
 python tools/test/run-settings-registration-tests.py
 ./tools/test/run-victron-host-tests.ps1
 ./tools/test/run-jbd-host-tests.ps1
@@ -34,12 +42,95 @@ python tools/test/run-settings-registration-tests.py
 pio run -e usb
 ```
 
-The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. Firmware version remains 0.3.0 by owner request during debugging. Known upstream deprecation/LTO warnings remain.
+The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current candidate is 1.4.0. Known upstream deprecation/LTO warnings remain.
 
 Secrets, local build bindings, tooling state and detailed device captures are excluded from Git. Earlier smoke/preparation acceptance documents are retained as historical evidence.
 
 The current feature adds minimum NTC temperature, cell/NTC counts, named protection causes, independent source-health heartbeats and guarded MOS commands. See [inventory](docs/telemetry-value-inventory.md), [command contract](docs/MQTT.md#guarded-command-contract) and [HA additions](docs/home-assistant-bms-controls.yaml). Live MOS switching is not qualified by host tests or telemetry readback.
 
-### Fixed 60-second MQTT refresh
+### Configurable full MQTT refresh
 
-At the owner's request on October 16, every 60 seconds the collector republishes source/control availability, capabilities and all currently valid measurements, including unchanged values and differences below the deadband. This timer is independent of the normal publication interval. Between refreshes the 0.1-unit/1-W deadbands still apply. Unsupported fields remain unavailable; no fabricated values are emitted. Admission retry, bounded cursor work and OTA pause remain in force. A restarted Home Assistant recovers unchanged values within approximately one minute while the collector, sources and broker are available. Network failures or OTA pauses can extend that interval. This refresh does not replace the 5-second source-health heartbeat.
+The collector republishes source/control availability, capabilities and all currently valid measurements, including unchanged values and differences below the deadband. `SBTMQTTRefresh` sets this full-refresh period to 5-3600 seconds, default 60 (the original fixed period requested on October 16). This timer is independent of the normal publication interval. Between refreshes the 0.1-unit/1-W deadbands still apply. Unsupported fields remain unavailable; no fabricated values are emitted. Admission retry, bounded cursor work and OTA pause remain in force. A restarted Home Assistant recovers unchanged values within approximately the configured full-refresh period while the collector, sources and broker are available. Network failures or OTA pauses can extend that interval. This refresh does not replace the 5-second source-health heartbeat.
+
+## Planned isolated UART wiring
+
+See the [BMS and Victron ADuM1201 wiring plan](docs/isolated-uart-wiring.md) for the proposed SBT ESP pin assignment and harness preparation. The current firmware still uses BLE; UART transport is not implemented by this documentation change.
+
+
+## Compact runtime metadata
+
+The 52 application descriptors use compact Float, Int, Bool, Text or Checkbox
+metadata. Connectivity combines the Bluetooth/MQTT live cards. Redundant MQTT
+identity/OTA/validation fields and source availability displays are omitted;
+Source reports ok or the concrete failure reason. Internal validation and OTA
+behavior are retained. Two observed-state MOS checkboxes replace four action
+buttons and keep the guarded request mailbox; an HTTP acknowledgment is not
+hardware confirmation. Unknown or stale provider values remain null.
+
+The MQTT channel list now has 26 entries. Cell/NTC counts and the three unused
+Victron placeholders are removed from values, capabilities and publication.
+Required JBD frame/cell/sensor-count validation remains. Numeric telemetry keeps
+its units, with three decimal places for the cell-voltage fields.
+
+CM's BLE configuration/IO split and the explicit SBT TX maximum of 9 bytes retain
+all 272-byte RX messages and both queue depths. Separate status buffers match
+the existing 256/384-byte producers. The normal USB build uses 80,464 static RAM
+bytes versus 85,232 at the checkpoint: 4,768 bytes recovered before startup.
+This is linker evidence, separate from measured runtime heap and stability.
+
+The [historical SBT migration evidence](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md)
+records the earlier implementation/build evidence and conditional COM7 rollout.
+Its original gates are historical; current test-device authorization is recorded
+in the canonical integration plan above. No long-duration stability or HTTP-panic
+fix is claimed by the earlier evidence.
+
+## Local heap diagnostics
+
+The 1.0.1 diagnostic candidate aligns the one-second serial Health sample with normal allocator capabilities: `heap`, `min` and `largest` use `MALLOC_CAP_DEFAULT`. `internal` is the broader internal-memory total and must not be interpreted as available malloc memory. These fields describe different capabilities, not an unexplained sudden loss between loggers.
+
+With `CM_ENABLE_VERBOSE_LOGGING=1` or `SBT_ENABLE_HEAP_DIAGNOSTICS=1`, the application installs its process-wide allocation-failure hook after serial setup. The first 16 events per boot, every 64th subsequent large failure, and all small failures up to 64 bytes are printed with `[HEAP-FAIL]`, including requested size, capabilities, allocator API, eligible free/largest memory and default free/largest memory. It uses ROM output and fixed storage, bypassing the regular logger. No existing hook was present when this integration was added; consumers must coordinate ownership if another subsystem later registers one. This diagnostic path is not qualified as generally ISR/cache-off safe. It and the periodic Health helper are omitted when both flags are disabled.
+
+The CM 4.6.1 diagnostic work added `[HTTP-HEAP]` request-boundary/integrity samples and removes avoidable app-info/theme-response buffers. Host tests and builds are software evidence only; the intermittent panic remains under investigation. Capture the first `[HEAP-FAIL]` event and its surrounding HTTP samples, and retain the matching ELF before rebuilding. No BMS command or device-control operation is needed for this investigation.
+
+Focused diagnostic host check: `tools/test/run-heap-failure-host-tests.ps1` (mocked allocator/ROM APIs, verbose 0 and 1). Build with `pio run -e usb`; uploading and serial monitoring remain owner-operated.
+
+
+Optional test instrumentation uses SBT_ENABLE_HEAP_DIAGNOSTICS=1 and
+-Wl,--wrap=sys_thread_sem_get. The normal build compiles it out. The probe calls
+the real getter once and reports NULL with task/caller and recent allocation
+failures using fixed storage; it does not preinitialize or repair the semaphore.
+The diagnostic profile remains local. See the handoff for exact firmware hashes
+and test-device results.
+
+## 1.2.0 changes
+
+Health generation now copies each source snapshot before reading its clock, preventing
+new BLE samples from appearing almost one uint32 clock period old. JBD NTC channels
+`bms/temperature_1_c` and `bms/temperature_2_c` preserve original sensor order
+(NTC 1 Top / NTC 2 Bottom); existing minimum/maximum topics remain. Missing sensors
+stay unavailable. No extra BLE query or control operation was added. This timestamp
+repair does not establish that historical overnight resets are fixed.
+
+## 1.3.0 changes
+
+BMS telemetry now retains the last complete valid cycle through transient BLE/query
+failures until `BmsDataTimeout` expires (1-9999 seconds, default 60). Settings >
+Bluetooth > BMS > Readout exposes the timeout. A new sample alone advances its
+original timestamp and sequence; cached data reports `cached` source health.
+Reconfiguration and OTA/pause clear the cache immediately. Guarded MOS operations
+still require a healthy connected session and a sample younger than 30 seconds.
+
+Settings > MQTT adds `SBTMQTTRefresh`, Full refresh interval (5-3600 seconds,
+default 60). It resends all currently valid telemetry independently of the delta
+publish interval. Changing either setting does not require a reboot. Invalid UI
+values are rejected; out-of-range stored values are bounded before use. MQTT
+retain flags, Victron freshness and all command deadlines are unchanged.
+
+Host/build validation and deployment acceptance are separate: this source change
+does not establish a repair of the underlying BLE interruptions or HTTP failures.
+
+## 1.4.0 changes
+
+Victron error code and daily yield are retained on their existing scalar MQTT topics. Separate retained `victron/last_valid/error_code` and `victron/last_valid/yield_today_wh` JSON topics preserve each last valid reading with its actual reception time for display. Live source availability remains strict; display history is never a control input. See [MQTT display history](docs/MQTT.md#140-victron-display-history) for clock and date handling.
+
+HA Allow controls now follow actual MOS readback and use fresh, explicit commands after a restart. The common ESP/HA control gate is persistent and blocks all external MOS writes, including SIL emergency requests, when off. See [the current control contract](docs/BMS.md#guarded-mos-permissions), [MQTT examples](docs/home-assistant-bms-controls.yaml) and [gate template](docs/home-assistant-bms-gate.yaml).

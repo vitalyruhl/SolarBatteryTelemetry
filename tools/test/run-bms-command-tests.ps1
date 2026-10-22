@@ -7,7 +7,7 @@ if($LASTEXITCODE -ne 0){throw 'BMS command host compile failed'}
 & $output
 if($LASTEXITCODE -ne 0){throw 'BMS command host checks failed'}
 
-foreach($case in @('bms_command_envelope_test','status_publisher_test')) {
+foreach($case in @('mos_propagation_test','bms_actual_control_test','bms_readback_settling_test','bms_command_envelope_test','status_publisher_test')) {
  $target=Join-Path $repo ('.pio/host-tests/'+$case+'.exe')
  & 'C:/Program Files/LLVM/bin/clang++.exe' -std=c++17 -Wall -Wextra -Werror -I (Join-Path $repo 'src') -I (Join-Path $repo '.pio/ble-smoke/libdeps/usb/ArduinoJson/src') (Join-Path $repo ('test/host/'+$case+'.cpp')) -o $target
  if($LASTEXITCODE -ne 0){throw ($case+' compile failed')}

@@ -2,9 +2,29 @@
 #include <cassert>
 #include <cstdio>
 using namespace bms;
-int main(){
- // [MOCKED!] Decoded frames at the portable transaction boundary, no radio mock.
- const auto request=[](MosTarget target,bool state){MosRequest r;r.target=target;r.state=state;std::memcpy(r.id,"test-1",7);r.deadline=30000;return r;};
+
+// [MOCKED!] Decoded protocol frames exercise the real portable command policy.
+static MosRequest request(MosTarget target,bool state,uint32_t deadline=30000) {
+ MosRequest value;value.target=target;value.state=state;value.deadline=deadline;
+ std::memcpy(value.id,"policy-test",sizeof("policy-test"));return value;
+}
+static Frame basic(uint8_t actual=3) {
+ Frame value;value.reg=3;value.size=23;value.payload[20]=actual;return value;
+}
+static void prepare(BmsCommandPolicy& policy,const MosRequest& value,uint32_t now=0,uint8_t actual=3) {
+ assert(policy.submit(value,now,true,true));policy.response(basic(actual),true,{},now+1);
+ assert(policy.pending()&&policy.expected()==0xe1);
+}
+static void acknowledge(BmsCommandPolicy& policy,uint32_t now=2) {
+ policy.markWriteSent();Frame ack;ack.reg=0xe1;policy.response(ack,true,{},now);
+ assert(!policy.pending()&&!std::strcmp(policy.result().phase,"acknowledged"));
+ assert(!std::strcmp(policy.result().reason,"ok"));
+}
+static void initialize(BmsCommandPolicy& policy,bool charge=true,bool discharge=false) {
+ auto value=request(MosTarget::Both,charge);value.dischargeState=discharge;
+ prepare(policy,value);acknowledge(policy);
+}
+int main() {
  MosMailbox mailbox;auto input=request(MosTarget::Charge,false);MosRequest dequeued;
  assert(!std::strcmp(mailbox.offer(input,0,false,true,false),"rejected_disabled"));
  assert(!mailbox.take(dequeued));
@@ -13,40 +33,104 @@ int main(){
  assert(!std::strcmp(mailbox.offer(input,0,true,true,true),"rejected_cancelled"));
  assert(!std::strcmp(mailbox.offer(input,30000,true,true,false),"rejected_expired"));
  assert(!std::strcmp(mailbox.offer(input,0,true,true,false),"accepted"));
- assert(mailbox.take(dequeued)); // Reservation persists while the loop starts the transaction.
+ assert(mailbox.take(dequeued));
  assert(!std::strcmp(mailbox.offer(input,1,true,true,false),"rejected_busy"));
  mailbox.settle(true);assert(mailbox.pending());mailbox.settle(false);assert(!mailbox.pending());
- assert(!std::strcmp(mailbox.offer(input,2,true,true,false),"accepted"));
+ assert(!std::strcmp(mailbox.offer(input,502,true,true,false),"accepted"));
  mailbox.cancel();assert(!mailbox.take(dequeued)&&!mailbox.pending());
- for(auto target:{MosTarget::Charge,MosTarget::Discharge})for(bool state:{false,true})for(uint8_t flags=0;flags<4;++flags){
-  BmsCommandPolicy p;assert(!p.submit(request(target,state),0,false,true));assert(!p.pending());
-  assert(p.submit(request(target,state),0,true,true));uint8_t command[9];size_t size=0;
-  assert(p.command(command,size)&&size==7&&command[2]==3);
-  Frame f;f.reg=3;f.size=23;f.payload[20]=flags;p.response(f,true,{},100);
-  assert(p.command(command,size)&&size==9&&command[0]==0xdd&&command[1]==0x5a&&command[2]==0xe1&&command[3]==2&&command[4]==0);
-  const uint8_t mask=target==MosTarget::Charge?1:2;
-  assert((command[5]&mask)==(state?0:mask));assert((command[5]&(3^mask))==((flags^3)&(3^mask)));
-  assert(command[6]==0xff&&command[7]==uint8_t(0-(0xe3+command[5]))&&command[8]==0x77);
-  Frame ack;ack.reg=0xe1;p.response(ack,true,{},200);assert(p.pending()&&p.command(command,size)&&command[2]==3);
-  f.payload[20]=static_cast<uint8_t>((flags&~mask)|(state?mask:0));p.response(f,true,{},210);
-  assert(p.command(command,size)&&command[2]==4);
-  Snapshot sample;sample.available=true;sample.receivedAt=220;sample.values[8]={true,(f.payload[20]&1)?1.:0.};sample.values[9]={true,(f.payload[20]&2)?1.:0.};
-  Frame cells;cells.reg=4;p.response(cells,true,sample,220);assert(!p.pending()&&!std::strcmp(p.result().phase,"verified"));
+
+ BmsCommandPolicy unknown;uint8_t wire[9]{};size_t size=0;
+ for(auto target:{MosTarget::Charge,MosTarget::Discharge})for(bool state:{false,true}) {
+  assert(unknown.submit(request(target,state),0,true,true));
+  unknown.cancel("cancelled");assert(!unknown.pending());
+  assert(!unknown.command(wire,size));
  }
- BmsCommandPolicy p;auto r=request(MosTarget::Charge,false);assert(!p.submit(r,0,true,false));assert(p.submit(r,0,true,true));
- assert(!p.submit(r,1,true,true));Frame wrong;wrong.reg=4;p.response(wrong,true,{},1);assert(p.pending());
- Frame basic;basic.reg=3;basic.size=23;basic.payload[20]=3;p.response(basic,true,{},2);
- uint8_t wire[9];size_t n=0;assert(p.command(wire,n));const uint8_t expected[]={0xdd,0x5a,0xe1,2,0,1,0xff,0x1c,0x77};assert(!std::memcmp(wire,expected,9));
- Frame ack;ack.reg=0xe1;ack.status=0x80;p.response(ack,true,{},3);assert(!p.pending()&&!std::strcmp(p.result().reason,"device_rejected"));
- for(const char* why:{"disconnected","ota","write_admission_failed"}){assert(p.submit(r,4,true,true));p.cancel(why);assert(!p.pending()&&!std::strcmp(p.result().reason,why));}
- assert(p.submit(r,0,true,true));p.tick(30000);assert(!p.pending()&&!std::strcmp(p.result().reason,"expired"));
- r.deadline=10;assert(p.submit(r,0xfffffff0u,true,true));p.tick(9);assert(p.pending());p.tick(10);assert(!p.pending());
- r.deadline=30000;assert(p.submit(r,0,true,true));p.response(basic,false,{},1);assert(!p.pending());
- assert(p.submit(r,0,true,true));p.response(basic,true,{},1);ack.status=0;p.response(ack,true,{},2);p.response(basic,true,{},3);
- Snapshot mismatch;mismatch.available=true;mismatch.receivedAt=4;mismatch.values[8]={true,1};mismatch.values[9]={true,1};Frame cells;cells.reg=4;p.response(cells,true,mismatch,4);
- assert(!p.pending()&&!std::strcmp(p.result().reason,"readback_mismatch"));
- // Write errors retain explicit status, while corrupt checksums remain rejected.
+ // Explicit requests initialize every possible pair; wire bytes are hand-checked.
+ struct PairCase {bool charge,discharge;uint8_t allowed,disabled,checksum;};
+ for(const auto& test:{PairCase{false,false,0,3,0x1a},PairCase{true,false,1,2,0x1b},
+                        PairCase{false,true,2,1,0x1c},PairCase{true,true,3,0,0x1d}}) {
+  BmsCommandPolicy policy;auto value=request(MosTarget::Both,test.charge);value.dischargeState=test.discharge;
+  assert(!policy.submit(value,0,false,true));assert(!policy.pending());
+  assert(!policy.submit(value,0,true,false));assert(!policy.pending());
+  assert(!policy.submit(value,30000,true,true));assert(!policy.pending());
+  assert(policy.submit(value,0,true,true));assert(!policy.submit(value,1,true,true));
+  assert(policy.command(wire,size)&&size==7&&wire[2]==3);
+  policy.response(basic(),true,{},1);assert(!policy.permissionsKnown());
+  assert(policy.command(wire,size)&&size==9);
+  const uint8_t expected[]={0xdd,0x5a,0xe1,2,0,test.disabled,0xff,test.checksum,0x77};
+  assert(!std::memcmp(wire,expected,sizeof(expected)));
+  acknowledge(policy);assert(policy.permissionsKnown()&&policy.permissionMask()==test.allowed);
+  assert(!policy.command(wire,size));
+ }
+
+ // The fresh actual opposite direction wins over any historical ACK pair.
+ struct SingleCase {bool initialCharge,initialDischarge;MosTarget target;bool state;uint8_t actual,allowed,disabled;};
+ for(const auto& test:{
+  SingleCase{true,false,MosTarget::Charge,false,3,2,1},
+  SingleCase{false,true,MosTarget::Discharge,false,3,1,2},
+  SingleCase{false,false,MosTarget::Charge,true,3,3,0},
+  SingleCase{false,false,MosTarget::Discharge,true,3,3,0},
+  SingleCase{true,true,MosTarget::Charge,true,0,1,2},
+  SingleCase{true,true,MosTarget::Discharge,true,0,2,1}}) {
+  BmsCommandPolicy policy;initialize(policy,test.initialCharge,test.initialDischarge);
+  prepare(policy,request(test.target,test.state),10,test.actual);
+  assert(policy.command(wire,size)&&wire[5]==test.disabled);
+  acknowledge(policy,12);assert(policy.permissionsKnown()&&policy.permissionMask()==test.allowed);
+ }
+
+ // Invalid or incomplete pre-read never emits a write or changes an acknowledged baseline.
+ for(bool accepted:{false,true}) {
+  BmsCommandPolicy policy;initialize(policy);
+  assert(policy.submit(request(MosTarget::Charge,false),10,true,true));
+  auto invalid=basic();if(accepted)invalid.size=22;
+  policy.response(invalid,accepted,{},11);
+  assert(!policy.pending()&&policy.permissionsKnown()&&policy.permissionMask()==1);
+  assert(!std::strcmp(policy.result().reason,"invalid_response"));
+ }
+ // A contradictory ACK cannot initialize permissions unless a write was actually queued.
+ BmsCommandPolicy notSent;auto both=request(MosTarget::Both,true);both.dischargeState=false;
+ prepare(notSent,both);Frame ack;ack.reg=0xe1;notSent.response(ack,true,{},2);
+ assert(!notSent.permissionsKnown()&&!std::strcmp(notSent.result().reason,"invalid_write_ack"));
+
+ // Uncertain queued writes invalidate an old baseline; pre-write rejection/cancellation does not.
+ for(const char* reason:{"disabled","ota","disconnected","write_admission_failed"}) {
+  BmsCommandPolicy before;initialize(before);assert(before.submit(request(MosTarget::Charge,false),10,true,true));
+  before.cancel(reason);assert(before.permissionsKnown()&&before.permissionMask()==1);
+  BmsCommandPolicy prepared;initialize(prepared);prepare(prepared,request(MosTarget::Charge,false),10);
+  prepared.cancel(reason);assert(prepared.permissionsKnown()&&prepared.permissionMask()==1);
+  BmsCommandPolicy sent;initialize(sent);prepare(sent,request(MosTarget::Charge,false),10);sent.markWriteSent();
+  sent.cancel(reason);assert(!sent.permissionsKnown()&&!sent.pending());
+ }
+ for(unsigned invalid=0;invalid<3;++invalid) {
+  BmsCommandPolicy policy;initialize(policy);prepare(policy,request(MosTarget::Charge,false),10);policy.markWriteSent();
+  Frame bad;bad.reg=0xe1;if(invalid==0)bad.status=0x80;if(invalid==1)bad.size=1;
+  policy.response(bad,invalid!=2,{},12);
+  assert(!policy.permissionsKnown()&&!policy.pending());
+  assert(!std::strcmp(policy.result().reason,invalid==0?"device_rejected":invalid==1?"invalid_write_ack":"invalid_response"));
+ }
+ BmsCommandPolicy invalidated;initialize(invalidated);invalidated.invalidatePermissions();
+ assert(!invalidated.permissionsKnown()&&invalidated.submit(request(MosTarget::Charge,true),10,true,true));invalidated.cancel("cancelled");
+ // Invalidating historical ACK state does not prevent a fresh actual-state request.
+ initialize(invalidated);assert(invalidated.submit(request(MosTarget::Charge,false),10,true,true));
+ invalidated.invalidatePermissions();invalidated.response(basic(),true,{},11);
+ assert(invalidated.pending()&&invalidated.expected()==0xe1);invalidated.cancel("cancelled");
+ BmsCommandPolicy ignored;ignored.markWriteSent();assert(!ignored.permissionsKnown());
+
+ // Legacy HA baselines cannot override the fresh actual pre-read.
+ BmsCommandPolicy rebooted;auto manual=request(MosTarget::Charge,false);
+ manual.baselineKnown=true;manual.baselineMask=1;
+ assert(!rebooted.pending()&&!rebooted.permissionsKnown()&&!rebooted.command(wire,size));
+ prepare(rebooted,manual,10,3);assert(rebooted.command(wire,size)&&wire[5]==1);
+ assert(!rebooted.permissionsKnown());acknowledge(rebooted,12);assert(rebooted.permissionMask()==2);
+ // A second click may carry a stale cached pair; preserve the fresh actual opposite bit.
+ manual.target=MosTarget::Discharge;manual.state=true;manual.baselineMask=1;
+ prepare(rebooted,manual,20,3);assert(rebooted.command(wire,size)&&wire[5]==0);
+ acknowledge(rebooted,22);assert(rebooted.permissionMask()==3);
+ BmsCommandPolicy uncertainManual;prepare(uncertainManual,manual,10);uncertainManual.markWriteSent();uncertainManual.cancel("expired");
+ assert(!uncertainManual.permissionsKnown()&&!uncertainManual.pending()&&!uncertainManual.command(wire,size));
+
+ // Error ACK parsing remains checksum-checked and does not turn into a permission ACK.
  Parser parser;Frame decoded;const uint8_t error[]={0xdd,0xe1,0x80,0,0xff,0x80,0x77};bool parsed=false;
- for(auto b:error)parsed=parser.push(b,decoded)||parsed;assert(parsed&&decoded.status==0x80);
- std::puts("MOS absolute commands, preserved opposite permission, errors, expiry and readback passed");
+ for(auto byte:error)parsed=parser.push(byte,decoded)||parsed;assert(parsed&&decoded.status==0x80);
+ std::puts("MOS actual pre-read, fresh opposite preservation and uncertain writes passed");
 }

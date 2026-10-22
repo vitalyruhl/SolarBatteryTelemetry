@@ -33,7 +33,9 @@ inline uint16_t u16(const uint8_t* p){return (uint16_t(p[0])<<8)|p[1];}
 class Cycle {
  Snapshot pending_{},published_{};bool basic_=false,have_=false;uint32_t basicAt_=0,publishedAt_=0,sequence_=0;
 public:
- void reset(){pending_={};published_={};basic_=have_=false;}
+ // A transport interruption invalidates the partial pair, never its last complete sample.
+ void interrupt(){pending_={};basic_=false;}
+ void reset(){interrupt();published_={};have_=false;}
  bool accept(const Frame& f,uint32_t now){
   if(f.status){basic_=false;return false;}
   const auto* p=f.payload.data();
@@ -46,9 +48,11 @@ public:
    auto set=[this](size_t i,double value){pending_.values[i]={true,value};};
    set(0,current>0);set(1,current<0);set(2,p[19]);set(3,voltage);set(4,current);set(5,voltage*current);
    set(6,u16(p+4)*.01);set(7,u16(p+6)*.01);set(8,(p[20]&1)!=0);set(9,(p[20]&2)!=0);set(14,u16(p+16));
-   set(26,p[21]);set(27,p[22]);set(28,u16(p+16));
+   set(telemetry::channelIndex("bms/protection"),u16(p+16));
    if(p[22]){double hottest=-273.1,coldest=1000;for(size_t i=0;i<p[22];++i){const double t=(int32_t(u16(p+23+2*i))-2731)*.1;
-     if(t < -50 || t > 150)return false;hottest=std::max(hottest,t);coldest=std::min(coldest,t);}set(10,hottest);set(25,coldest);}
+     if(t < -50 || t > 150)return false;
+     if(i<2)set(telemetry::channelIndex(i==0?"bms/temperature_1_c":"bms/temperature_2_c"),t);
+     hottest=std::max(hottest,t);coldest=std::min(coldest,t);}set(10,hottest);set(telemetry::channelIndex("bms/temperature_min_c"),coldest);}
    basic_=true;basicAt_=now;return true;
   }
   if(f.reg!=4)return false;
@@ -59,7 +63,7 @@ public:
   pending_.values[11]={true,low*.001};pending_.values[12]={true,high*.001};pending_.values[13]={true,(high-low)*.001};
   pending_.receivedAt=now;pending_.sequence=++sequence_;published_=pending_;publishedAt_=now;have_=true;return true;
  }
- Snapshot snapshot(uint32_t now) const {auto result=published_;result.available=have_&&uint32_t(now-publishedAt_)<30000;
+ Snapshot snapshot(uint32_t now,uint32_t timeoutMs=30000) const {auto result=published_;result.available=have_&&uint32_t(now-publishedAt_)<timeoutMs;
   if(!result.available)result.values={};return result;}
 };
 }

@@ -22,5 +22,11 @@ int main(){
  assert(!box.port(0));assert(box.port(1884));box.intervals(1,5000);assert(box.take(seen,c)&&c.port==1884&&c.publishMs==5000&&c.listenMs==1000);
  box.intervals(10,0);assert(box.take(seen,c)&&c.publishMs==10000&&c.listenMs==0);
  assert(box.text(TextField::Root,"repaired",8));assert(box.take(seen,c)&&!c.rootRejected&&std::string(c.root)=="repaired");
+ assert(c.fullRefreshMs==60000);
+ box.fullRefreshInterval(5);assert(box.take(seen,c)&&c.fullRefreshMs==5000&&c.publishMs==10000);
+ box.fullRefreshInterval(120);assert(box.take(seen,c)&&c.fullRefreshMs==120000&&c.publishMs==10000);
+ box.fullRefreshInterval(-1);assert(box.take(seen,c)&&c.fullRefreshMs==5000);
+ box.fullRefreshInterval(2147483647);assert(box.take(seen,c)&&c.fullRefreshMs==3600000);
+ box.fullRefreshInterval(60);assert(box.take(seen,c)&&c.fullRefreshMs==60000&&c.configRejected);
  std::puts("MQTT mailbox: latest handoff, invalid preservation, empty password, bounds, interval effects passed");
 }

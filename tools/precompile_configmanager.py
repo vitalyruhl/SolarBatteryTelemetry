@@ -5,10 +5,10 @@ import re
 
 Import("env")
 
-hint="Set custom_cm_path and an absolute symlink:// dependency in ignored platformio.local.ini; reviewed local CM 4.5.0 is unpublished."
+hint="Set custom_cm_path and an absolute symlink:// dependency in ignored platformio.local.ini; reviewed local CM 4.7.0 is unpublished."
 configured=env.GetProjectOption("custom_cm_path","")
 if not configured:
-    raise RuntimeError("Missing local ConfigManager 4.5 override. "+hint)
+    raise RuntimeError("Missing local ConfigManager 4.7 override. "+hint)
 library=Path(configured)
 if not library.is_absolute():
     raise RuntimeError("ConfigManager local path must be absolute. "+hint)
@@ -23,8 +23,8 @@ if not manifest.is_file():raise RuntimeError("Local ConfigManager manifest is mi
 metadata=json.loads(manifest.read_text(encoding="utf-8"))
 version=metadata.get("version","")
 parsed=re.fullmatch(r"(\d+)\.(\d+)\.(\d+)",version)
-if metadata.get("name")!="ESP32 Configuration Manager" or not parsed or tuple(map(int,parsed.groups()))<(4,5,0):
-    raise RuntimeError("ConfigManager 4.5.0 or newer reviewed development source is required. "+hint)
+if metadata.get("name")!="ESP32 Configuration Manager" or not parsed or tuple(map(int,parsed.groups()))<(4,7,0):
+    raise RuntimeError("ConfigManager 4.7.0 or newer reviewed development source is required. "+hint)
 header=(library/"src/ConfigManager.h").read_text(encoding="utf-8")
 match=re.search(r'^#define\s+CONFIGMANAGER_VERSION\s+"([^"]+)"',header,re.MULTILINE)
 web=json.loads((library/"webui/package.json").read_text(encoding="utf-8"))

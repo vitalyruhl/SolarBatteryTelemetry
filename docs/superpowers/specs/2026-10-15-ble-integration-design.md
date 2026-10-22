@@ -1,7 +1,7 @@
 # BMS and Victron Integration Design Proposal
 
 Date: 2026-10-15. Status: proposed for owner review; no implementation authorized.
-Companion: [implementation plan](../plans/2026-10-15-ble-integration.md).
+Companion: [historical implementation-plan evidence](../../acceptance/2026-10-15-ble-integration-evidence.md).
 Context: [project information](../../../project.info.md).
 
 ## Approved intent and boundaries

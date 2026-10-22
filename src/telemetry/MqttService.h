@@ -1,12 +1,14 @@
 #pragma once
 #include <Arduino.h>
 #include <ConfigManager.h>
+#include "runtime/AppRuntimeMetadata.h"
 #include <mqtt/MQTTManager.h>
 #include <atomic>
 #include "MqttConfigMailbox.h"
 #include "MqttLoopPolicy.h"
 #include "MqttUiSettings.h"
 #include "StatusPublisher.h"
+#include "VictronHistoryPublisher.h"
 #include "BmsCommandEnvelope.h"
 #include "bms/BmsReadout.h"
 #include <ctime>
@@ -17,23 +19,27 @@ class MqttService final : public Transport {
  cm::MQTTManager& mqtt_=cm::MQTTManager::instance();
  ConfigMailbox mailbox_;
  MqttConfig desired_{};uint32_t seen_=0;
- Publisher publisher_;
+ Publisher publisher_;VictronHistoryPublisher victronHistory_;
  StatusPublisher statuses_;CommandSession session_;bms::Readout* bms_=nullptr;
  bool subscribed_=false;uint32_t subscribeAt_=0,lastResultSequence_=0;
  struct Health {bool initialized=false,available=false;const char* reason="unknown";uint32_t sentAt=0,receivedAt=0,sequence=0;} health_[2];
- void newSession(){statuses_.clearResult();char token[33];for(unsigned i=0;i<4;++i)std::snprintf(token+i*8,9,"%08lx",static_cast<unsigned long>(esp_random()));session_.begin(token);if(bms_)bms_->cancelCommands();}
+ void newSession(){statuses_.clearResult();char token[33];for(unsigned i=0;i<4;++i)std::snprintf(token+i*8,9,"%08lx",static_cast<unsigned long>(esp_random()));session_.begin(token);if(bms_){lastResultSequence_=bms_->control().result.sequence;bms_->cancelCommands();}result("","idle","no_request");}
  void subscribeCommands(uint32_t now){subscribeAt_=now;subscribed_=true;for(const auto* suffix:commandSuffixes){char topic[topicLimit+1];subscribed_=buildTopic(publisher_.root(),suffix,topic,sizeof(topic))&&mqtt_.subscribe(topic,0)&&subscribed_;}}
  void result(const char* id,const char* phase,const char* reason){char payload[384];const auto sample=bms_?bms_->snapshot():bms::Snapshot{};
-  if(formatCommandResult(id,phase,reason,sample.values.data(),sample.available,payload,sizeof(payload)))statuses_.set(3,payload);
+  if(formatCommandResult(id,phase,reason,sample.values.data(),sample.available,payload,sizeof(payload),session_.token()))statuses_.set(3,payload);
  }
  void message(const char* topic,const byte* payload,unsigned int length){
   const auto n=std::strlen(publisher_.root());if(std::strncmp(topic,publisher_.root(),n)||topic[n]!='/')return;
   bms::MosRequest request;const char* reason=session_.accept(topic+n+1,reinterpret_cast<const char*>(payload),length,std::time(nullptr)>0?static_cast<uint64_t>(std::time(nullptr)):0,millis(),request);
   if(std::strcmp(reason,"ok")){result("","rejected",reason);if(!std::strcmp(reason,"session_exhausted"))newSession();return;}
   if(!bms_){result(request.id,"rejected","adapter_unavailable");return;}
+  if(request.target==bms::MosTarget::Gate){
+   if(otaPaused_.load()||!subscribed_||!bms_->queueGate(request))result(request.id,"rejected","setting_unavailable");
+   return;
+  }
   const auto state=bms_->control();
   if(otaPaused_.load()||!state.ready||!subscribed_){result(request.id,"rejected",otaPaused_.load()?"ota":!state.enabled?"disabled":state.pending?"busy":"unavailable");return;}
-  if(!bms_->queueRequest(request))result(request.id,"rejected","busy");
+  if(!bms_->queueRequest(request))result(request.id,"rejected",bms_->control().admission);
  }
  void health(unsigned index,bool available,const char* reason,uint32_t receivedAt,uint32_t sequence,uint32_t now){
   auto& state=health_[index];const bool changed=!state.initialized||available!=state.available||std::strcmp(reason,state.reason);
@@ -46,13 +52,16 @@ class MqttService final : public Transport {
  }
  void controlStatus(){if(!bms_)return;const auto state=bms_->control();const bool clockReady=std::time(nullptr)>=1577836800;
   const bool ready=state.ready&&clockReady&&subscribed_&&mqtt_.isConnected()&&!otaPaused_.load();publisher_.setControl(state.enabled,ready);
-  char payload[384];std::snprintf(payload,sizeof(payload),"{\"enabled\":%s,\"ready\":%s,\"pending\":%s,\"session\":\"%s\",\"reason\":\"%s\"}",state.enabled?"true":"false",ready?"true":"false",state.pending?"true":"false",session_.token(),!state.enabled?"disabled":!clockReady?"clock_unavailable":state.pending?"busy":ready?"ok":"unavailable");statuses_.set(2,payload);
+  char payload[384];
+  if(formatControlStatus(state.enabled,ready,state.pending,session_.token(),!state.enabled?"disabled":!clockReady?"clock_unavailable":state.pending?"busy":ready?"ok":"unavailable",
+      state.permissionsKnown,state.permissionMask,state.readback,payload,sizeof(payload),state.peer))statuses_.set(2,payload);
+  statuses_.clearPermissions(); // Retire historical ACK state as a control/display source.
   if(state.result.sequence!=lastResultSequence_){lastResultSequence_=state.result.sequence;result(state.result.id,state.result.phase,state.result.reason);}
  }
 
  bool oldEndpointUnconfirmed_=false;
  std::atomic<bool> otaPaused_{false};
- struct View {char root[rootLimit+1]="SolarBatteryTelemetry";bool enabled=false,connected=false,rejected=false,delivered=false,cleanupPending=false,oldEndpointUnconfirmed=false;int state=0;};
+ struct View {uint32_t fullRefreshMs=60000;char root[rootLimit+1]="SolarBatteryTelemetry";bool enabled=false,connected=false,rejected=false,delivered=false,cleanupPending=false,oldEndpointUnconfirmed=false;int state=0;};
  std::mutex viewMutex_;View view_;
  void captureText(TextField field,const String& value){mailbox_.text(field,value.c_str(),value.length());}
  void captureInitial() {
@@ -60,6 +69,7 @@ class MqttService final : public Transport {
   captureText(TextField::Username,ui_->username.get());captureText(TextField::Password,ui_->password.get());
   captureText(TextField::ClientId,ui_->clientId.get());captureText(TextField::Root,ui_->publishTopicBase.get());
   mailbox_.intervals(ui_->publishIntervalSec.get(),ui_->listenIntervalMs.get());
+  mailbox_.fullRefreshInterval(ui_->fullRefreshIntervalSec.get());
  }
  void installCallbacks(){
   ui_->enableMQTT.setCallback([this](bool v){mailbox_.enabled(v);});
@@ -71,15 +81,13 @@ class MqttService final : public Transport {
   ui_->publishTopicBase.setCallback([this](const String& v){captureText(TextField::Root,v);});
   ui_->publishIntervalSec.setCallback([this](float v){mailbox_.publishInterval(v);});
   ui_->listenIntervalMs.setCallback([this](int v){mailbox_.listenInterval(v);});
+  ui_->fullRefreshIntervalSec.setCallback([this](int v){mailbox_.fullRefreshInterval(v);});
  }
  void updateView(){std::lock_guard<std::mutex> guard(viewMutex_);std::memcpy(view_.root,publisher_.root(),std::strlen(publisher_.root())+1);
   view_.enabled=desired_.enabled;view_.connected=mqtt_.isConnected();view_.rejected=desired_.rootRejected||desired_.configRejected||publisher_.rootRejected();
   view_.cleanupPending=publisher_.retirementPending();view_.oldEndpointUnconfirmed=oldEndpointUnconfirmed_;
-  view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
- static void field(ConfigManagerClass& cm,const char* source,const char* key,const char* label,int order,const char* card="MQTT",const char* unit=""){
-  RuntimeFieldMeta meta;meta.sourceGroup=source;meta.key=key;meta.label=label;meta.page=std::strcmp(source,"bms")==0?"BMS":std::strcmp(source,"victron")==0?"Victron":"MQTT";meta.card=card;meta.group=card;
-  meta.order=order;meta.isString=true;meta.unit=unit;cm.getRuntime().addRuntimeMeta(meta);
- }
+  view_.fullRefreshMs=desired_.fullRefreshMs;view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
+
 public:
  bool attach(ConfigManagerClass& cm,const char* broker,int port,const char* user,const char* password,bool enableDefault){
   if(ui_)return false; // Persistent settings must be constructed and registered only once.
@@ -95,35 +103,27 @@ public:
   // Deliberately no MQTTManager::attach(): it would expose loop-owned settings to AsyncWeb writes.
   // Standalone public settings/begin/loop retain System-Info/ESP and /WiFi conventions.
   mqtt_.setBufferSize(1536);mqtt_.setRetryInterval(10000);mqtt_.setMaxRetries(10);mqtt_.setKeepAlive(30);
-  mqtt_.onMQTTConnect([this](){publisher_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
+  mqtt_.onMQTTConnect([this](){publisher_.onConnected();victronHistory_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
   mqtt_.onMQTTDisconnect([this](){session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();});
   mqtt_.onMessage([this](const char* topic,const byte* payload,unsigned int length){message(topic,payload,length);});
   installCallbacks();
-  cm.addLivePage("MQTT",45);cm.addLivePage("BMS",50);cm.addLivePage("Victron",55);
+  cm.addLivePage("Connectivity",40);cm.addLivePage("BMS",50);cm.addLivePage("Victron",55);
   for(const char* card:{"MQTT","bms","victron"}){
-   const char* page=std::strcmp(card,"bms")==0?"BMS":std::strcmp(card,"victron")==0?"Victron":"MQTT";
-   cm.addLiveCard(page,card,45);cm.addLiveGroup(page,card,card,45);
+   const char* page=std::strcmp(card,"bms")==0?"BMS":std::strcmp(card,"victron")==0?"Victron":"Connectivity";
+   const char* liveCard=std::strcmp(card,"MQTT")==0?"Connectivity":card;
+   cm.addLiveCard(page,liveCard,45);cm.addLiveGroup(page,liveCard,card,45);
   }
   cm.getRuntime().addRuntimeProvider("telemetry",[this](JsonObject& data){
    View v;{std::lock_guard<std::mutex> guard(viewMutex_);v=view_;}
    data["scope"]="Victron readout and guarded JBD MOS controls";data["root"]=String(v.root);
-   data["connection"]=v.connected?"online":"offline";data["enabled"]=v.enabled?"enabled":"disabled";
+   data["connection"]=v.connected?"online":"offline";data["mqttEnabled"]=v.enabled?"enabled":"disabled";
    data["rootValidation"]=v.rejected?"rejected; last valid configuration retained":"valid";
    data["snapshot"]=v.delivered?"locally sent (QoS0)":"pending";
+   data["full_refresh_interval_s"]=v.fullRefreshMs/1000u;
    data["ota"]=otaPaused_.load()?"paused":"ready";
    data["retirement"]=v.oldEndpointUnconfirmed?"previous broker cleanup unconfirmed":v.cleanupPending?"same broker cleanup pending":"complete";
   },6);
-  // Omit the redundant scope label: 65 entries would double the shared metadata vector.
-  // Keep the application within 64 UI fields so WiFi/BLE retain startup heap headroom.
-  field(cm,"telemetry","root","Active base topic",2);
-  field(cm,"telemetry","connection","MQTT connection",3);field(cm,"telemetry","enabled","MQTT enabled",4);
-  field(cm,"telemetry","rootValidation","Configuration validation",5);field(cm,"telemetry","snapshot","Latest snapshot",6);field(cm,"telemetry","ota","MQTT OTA pause",7);field(cm,"telemetry","retirement","Retained status cleanup",8);
-  for(Source source:{Source::Bms,Source::Victron}) {
-   const char* name=sourceName(source);
-   field(cm,name,"availability","Source availability",1,name);field(cm,name,"reason","Source reason",2,name);
-  }
-  for(const char* key:{"control_enabled","control_ready","control_pending","control_admission","control_result","control_reason","control_request_id","sample_sequence","sample_age_ms"})field(cm,"bms",key,key,50,"bms");
-  int order=10;for(const auto& c:channels)field(cm,sourceName(c.source),std::strchr(c.suffix,'/')+1,c.label,order++,sourceName(c.source),c.unit);
+  if(!sbt::metadata::registerTelemetryFields(cm.getRuntime()))return false;
   return true;
  }
  // Called once after loadAll and before server/tasks. Config::load intentionally omits callbacks.
@@ -136,6 +136,7 @@ public:
   publisher_.setSourceAvailable(Source::Bms,available);
  }
  void updateVictron(const Value* values,bool available,const char* reason,uint32_t receivedAt,uint32_t now){
+  victronHistory_.observe(values,available,receivedAt,now,static_cast<int64_t>(std::time(nullptr)));
   health(1,available,reason,receivedAt,0,now);
   for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Victron)publisher_.setValue(i,available?values[i]:Value{});
   publisher_.setSourceAvailable(Source::Victron,available);
@@ -158,7 +159,7 @@ public:
    }
    auto& live=mqtt_.settings();
    live.enableMQTT.set(next.enabled);mqtt_.setServer(next.server,next.port);mqtt_.setCredentials(next.username,next.password);mqtt_.setClientId(next.clientId);
-   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);
+   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);statuses_.setRefreshInterval(next.fullRefreshMs);
    if(reconnect&&next.enabled)configure(publisher_.root());
   }
   publisher_.requestRoot(desired_.root,std::strlen(desired_.root));
@@ -166,6 +167,7 @@ public:
   runPreparedMqttLoop(publisher_,now,*this,desired_.enabled&&desired_.server[0],
    [this](){return otaPaused_.load();},[this](){mqtt_.loop();});
   controlStatus();statuses_.tick(now,publisher_.root(),*this);
+  victronHistory_.tick(now,publisher_.root(),*this);
   updateView();
  }
  bool connected() const override{return mqtt_.isConnected();}

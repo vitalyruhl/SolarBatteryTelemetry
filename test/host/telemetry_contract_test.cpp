@@ -48,7 +48,7 @@ static void testDeadbands() {
         drain(publisher,wire,40001);assert(wire.sent.empty());
         publisher.setValue(i,Value{true,10+threshold*.2});drain(publisher,wire,45001);assert(wire.sent.size()==1);
     }
-    for(const std::size_t i:{0u,8u,14u,22u,23u}) {
+    for(const std::size_t i:{std::size_t(0),std::size_t(8),std::size_t(14),channelIndex("victron/charge_state"),channelIndex("victron/error_code")}) {
         Wire wire;Publisher publisher;publisher.setValue(i,Value{true,0});
         publisher.setSourceAvailable(channels[i].source,true);publisher.onConnected();drain(publisher,wire,0);wire.sent.clear();
         publisher.setValue(i,Value{true,1});drain(publisher,wire,5000);assert(wire.sent.size()==1);
@@ -61,6 +61,34 @@ static void testDeadbands() {
     assert(find(wire,"SolarBatteryTelemetry/bms/voltage_v")->payload=="48.27");wire.sent.clear();
     publisher.setValue(3,Value{true,48.35});drain(publisher,wire,10250);assert(wire.sent.empty());
     publisher.setValue(3,Value{true,48.37});drain(publisher,wire,15250);assert(wire.sent.size()==1);
+}
+static void testConfigurableRefresh() {
+ Wire faster;Publisher p;p.setInterval(3600000);p.setRefreshInterval(5000);p.setSourceAvailable(Source::Bms,true);p.setValue(3,{true,48.12});p.onConnected();drain(p,faster,100);faster.sent.clear();
+ drain(p,faster,5099);assert(faster.sent.empty());drain(p,faster,5100);assert(find(faster,"SolarBatteryTelemetry/bms/voltage_v"));
+ Wire slower;Publisher q;q.setInterval(5000);q.setRefreshInterval(120000);q.setSourceAvailable(Source::Bms,true);q.setValue(3,{true,48.12});q.onConnected();drain(q,slower,100);slower.sent.clear();
+ q.setValue(3,{true,48.5});drain(q,slower,5100);assert(slower.sent.size()==1);slower.sent.clear();
+ drain(q,slower,60100);assert(slower.sent.empty());drain(q,slower,120100);assert(find(slower,"SolarBatteryTelemetry/bms/voltage_v")&&find(slower,"SolarBatteryTelemetry/status"));assert(slower.disconnects==0);
+ Wire bound;Publisher b;b.setInterval(3600000);b.setRefreshInterval(0);b.setSourceAvailable(Source::Bms,true);b.setValue(3,{true,48});b.onConnected();drain(b,bound,0xfffffff0u);bound.sent.clear();
+ drain(b,bound,0x1377u);assert(bound.sent.empty());drain(b,bound,0x1378u);assert(find(bound,"SolarBatteryTelemetry/bms/voltage_v"));bound.sent.clear();
+ b.setRefreshInterval(0xffffffffu);drain(b,bound,10000);assert(bound.sent.empty());drain(b,bound,3604984u);assert(find(bound,"SolarBatteryTelemetry/bms/voltage_v"));
+}
+static void testLiveRefreshChangesAndRetry() {
+ // A live change uses the last refresh anchor, without resetting delta/cache state.
+ Wire live;Publisher p;p.setInterval(3600000);p.setSourceAvailable(Source::Bms,true);p.setValue(3,{true,48});p.onConnected();drain(p,live,100);live.sent.clear();
+ drain(p,live,1000);p.setRefreshInterval(120000);
+ drain(p,live,60100);assert(live.sent.empty());drain(p,live,120099);assert(live.sent.empty());
+ drain(p,live,120100);assert(live.sent.size()==6);live.sent.clear();
+ drain(p,live,121100);p.setRefreshInterval(5000);
+ drain(p,live,125099);assert(live.sent.empty());drain(p,live,125100);assert(live.sent.size()==6);live.sent.clear();
+ // A shorter period already elapsed is due on the next tick, not one period after the edit.
+ p.setRefreshInterval(120000);drain(p,live,135100);assert(live.sent.empty());p.setRefreshInterval(5000);
+ drain(p,live,135101);assert(live.sent.size()==6&&live.disconnects==0);
+ // Accepted refresh metadata is not repeated when its unchanged scalar needs retry.
+ Wire partial;Publisher q;q.setInterval(3600000);q.setRefreshInterval(5000);q.setSourceAvailable(Source::Bms,true);q.setValue(3,{true,48});q.onConnected();drain(q,partial,0);partial.sent.clear();partial.failAt=5;
+ drain(q,partial,5000);assert(partial.sent.size()==5&&!q.delivered());const auto attempts=partial.attempts;
+ partial.failAt=-1;drain(q,partial,5249);assert(partial.attempts==attempts);drain(q,partial,5250);
+ assert(q.delivered()&&partial.sent.size()==6&&partial.sent.back().topic=="SolarBatteryTelemetry/bms/voltage_v"&&partial.sent.back().payload=="48");
+ partial.sent.clear();drain(q,partial,9999);assert(partial.sent.empty());drain(q,partial,10000);assert(partial.sent.size()==6);
 }
 void testMinuteRefresh(){
  Wire wire;Publisher p;p.setInterval(3600000);p.setSourceAvailable(Source::Bms,true);
@@ -78,10 +106,41 @@ void testMinuteRefresh(){
  Wire wrapped;Publisher q;q.setValue(3,{true,1});q.setSourceAvailable(Source::Bms,true);q.onConnected();drain(q,wrapped,0xfffffff0u);wrapped.sent.clear();
  drain(q,wrapped,0xea4fu);assert(wrapped.sent.empty());drain(q,wrapped,0xea50u);assert(wrapped.sent.size()==6);
 }
+static void testVictronRetainedMeasurements() {
+    Wire wire;Publisher publisher;
+    publisher.setSourceAvailable(Source::Victron,true);
+    publisher.setValue(channelIndex("victron/error_code"),{true,0});
+    publisher.setValue(channelIndex("victron/yield_today_wh"),{true,1230});
+    publisher.setValue(channelIndex("victron/solar_power_w"),{true,42});
+    publisher.onConnected();drain(publisher,wire,0);
+    const auto* error=find(wire,"SolarBatteryTelemetry/victron/error_code");
+    const auto* yield=find(wire,"SolarBatteryTelemetry/victron/yield_today_wh");
+    const auto* power=find(wire,"SolarBatteryTelemetry/victron/solar_power_w");
+    assert(error&&error->payload=="0"&&error->retain);
+    assert(yield&&yield->payload=="1230"&&yield->retain);
+    assert(power&&power->payload=="42"&&!power->retain);
+    wire.sent.clear();publisher.setSourceAvailable(Source::Victron,false);drain(publisher,wire,1);
+    const auto* availability=find(wire,"SolarBatteryTelemetry/victron/availability");
+    assert(availability&&availability->payload=="unavailable");
+    assert(!find(wire,"SolarBatteryTelemetry/victron/error_code"));
+    assert(!find(wire,"SolarBatteryTelemetry/victron/yield_today_wh"));
+    assert(!find(wire,"SolarBatteryTelemetry/victron/solar_power_w"));
+}
 int main() {
+    testVictronRetainedMeasurements();
+    assert(channelCount==26);
+    {Wire wire;Publisher publisher;const auto top=channelIndex("bms/temperature_1_c"),bottom=channelIndex("bms/temperature_2_c");
+     publisher.setSourceAvailable(Source::Bms,true);publisher.setValue(top,{true,17.5});publisher.setValue(bottom,{true,21.5});publisher.onConnected();drain(publisher,wire,0);
+     assert(find(wire,"SolarBatteryTelemetry/bms/temperature_1_c")->payload=="17.5");
+     assert(find(wire,"SolarBatteryTelemetry/bms/temperature_2_c")->payload=="21.5");wire.sent.clear();
+     publisher.setValue(top,{true,21.5});publisher.setValue(bottom,{});drain(publisher,wire,5000);
+     assert(find(wire,"SolarBatteryTelemetry/bms/temperature_1_c")->payload=="21.5");
+     assert(find(wire,"SolarBatteryTelemetry/bms/temperature_2_c")->payload=="null");}
+    testConfigurableRefresh();
+    testLiveRefreshChangesAndRetry();
     testMinuteRefresh();
     testDeadbands();
-    {Wire wire;Publisher publisher;publisher.setValue(28,{true,65535});
+    {Wire wire;Publisher publisher;publisher.setValue(channelIndex("bms/protection"),{true,65535});
      publisher.setSourceAvailable(Source::Bms,true);publisher.onConnected();drain(publisher,wire,0);
      const auto* result=find(wire,"SolarBatteryTelemetry/bms/protection");
      assert(result&&result->payload.find("unknown_15")!=std::string::npos&&publisher.delivered());}
@@ -98,7 +157,7 @@ int main() {
     assert(!buildTopic("x","status",topic,8));
     std::string suffix(64,'s');assert(buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
     suffix+='s';assert(!buildTopic(maxRoot.c_str(),suffix.c_str(),topic,sizeof(topic)));
-    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/pv_voltage_v","victron/pv_current_a","victron/battery_voltage_v","victron/charge_current_a","victron/battery_power_w","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh","bms/temperature_min_c","bms/cell_count","bms/temperature_sensor_count","bms/protection"};
+    const char* expected[]={"bms/charging","bms/discharging","bms/state_of_charge_pct","bms/voltage_v","bms/current_a","bms/power_w","bms/remaining_capacity_ah","bms/full_capacity_ah","bms/charge_enabled","bms/discharge_enabled","bms/temperature_max_c","bms/cell_voltage_min_v","bms/cell_voltage_max_v","bms/cell_voltage_delta_v","bms/alarm_bits","victron/solar_power_w","victron/battery_voltage_v","victron/charge_current_a","victron/load_current_a","victron/charge_state","victron/error_code","victron/yield_today_wh","bms/temperature_min_c","bms/protection","bms/temperature_1_c","bms/temperature_2_c"};
     assert(channelCount==sizeof(expected)/sizeof(expected[0]));
     for(std::size_t i=0;i<channelCount;++i) {
         assert(std::strcmp(channels[i].suffix,expected[i])==0);
@@ -107,20 +166,19 @@ int main() {
         assert(formatValue(channels[i],Value{},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     }
     assert(channels[0].type==FieldType::Boolean&&channels[14].type==FieldType::Unsigned);
-    assert(std::strcmp(channels[6].unit,"Ah")==0&&std::strcmp(channels[19].unit,"A")==0);
+    assert(std::strcmp(channels[6].unit,"Ah")==0&&std::strcmp(channels[channelIndex("victron/charge_current_a")].unit,"A")==0);
     assert(formatValue(channels[0],Value{true,0},payload,sizeof(payload))&&std::strcmp(payload,"false")==0);
     assert(formatValue(channels[0],Value{true,1},payload,sizeof(payload))&&std::strcmp(payload,"true")==0);
     assert(formatValue(channels[3],Value{true,0},payload,sizeof(payload))&&std::strcmp(payload,"0")==0);
     assert(formatValue(channels[3],Value{true,std::numeric_limits<double>::infinity()},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     assert(formatValue(channels[14],Value{true,-1},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
-    assert(formatValue(channels[22],Value{true,2},payload,sizeof(payload))&&std::strcmp(payload,"\"bulk\"")==0);
-    assert(formatValue(channels[22],Value{true,99},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
-    assert(formatValue(channels[16],Value{true,48},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
+    assert(formatValue(channels[channelIndex("victron/charge_state")],Value{true,2},payload,sizeof(payload))&&std::strcmp(payload,"\"bulk\"")==0);
+    assert(formatValue(channels[channelIndex("victron/charge_state")],Value{true,99},payload,sizeof(payload))&&std::strcmp(payload,"null")==0);
     assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload)));
     assert(std::strstr(payload,"SolarBatteryTelemetry/bms/charge_enabled/set"));
     assert(std::strstr(payload,"SolarBatteryTelemetry/bms/discharge_enabled/set"));
     assert(std::strstr(payload,"\"read_only\":true")&&std::strstr(payload,"\"commands_enabled\":false"));
-    assert(std::strstr(payload,"equalization")&&std::strstr(payload,"pv_current_a"));
+    assert(std::strstr(payload,"equalization")&&!std::strstr(payload,"pv_current_a")&&!std::strstr(payload,"pv_voltage_v")&&!std::strstr(payload,"battery_power_w"));
     assert(!capabilities("a",payload,16));
     assert(capabilities("SolarBatteryTelemetry",payload,sizeof(payload),true,true));
     assert(std::strstr(payload,"jbd_readout")&&std::strstr(payload,"\"source_state\":\"available\""));
@@ -149,7 +207,7 @@ int main() {
     assert(w.will=="latest/status"&&std::strcmp(p.root(),"latest")==0);
     w.online=true;p.onConnected();drain(p,w,6200);assert(!find(w,"latest/bms/voltage_v")&&find(w,"latest/status"));
     Wire wrap;Publisher q;q.setValue(3,Value{true,1});q.setSourceAvailable(Source::Bms,true);q.onConnected();drain(q,wrap,0xfffffff0u);auto n=wrap.sent.size();q.setValue(3,Value{true,2});
-    drain(q,wrap,0x00001377u);assert(wrap.sent.size()==n);drain(q,wrap,0x00001378u);assert(wrap.sent.size()==n+1);
+    drain(q,wrap,0x00001377u);assert(wrap.sent.size()==n+1);drain(q,wrap,0x00001378u);assert(wrap.sent.size()==n+1);
     Wire paused;Publisher r;r.onConnected();r.setPaused(true);drain(r,paused,100);assert(paused.sent.empty());
     r.setPaused(false);drain(r,paused,101);assert(paused.sent.size()==5);
     Wire partial;Publisher partialPolicy;partialPolicy.onConnected();partial.failAt=3;
@@ -186,21 +244,21 @@ int main() {
     assert(!find(interrupted,"SolarBatteryTelemetry/victron/solar_power_w"));
     // [MOCKED!] Source values exercise delta policy and wire-level equality.
     Wire delta;Publisher changed;
-    changed.setValue(15,Value{true,128});changed.setValue(18,Value{true,0});
+    changed.setValue(15,Value{true,128});changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});
     changed.setSourceAvailable(Source::Victron,true);changed.onConnected();drain(changed,delta,0);
     assert(delta.sent.size()==7&&find(delta,"SolarBatteryTelemetry/victron/battery_voltage_v")->payload=="0");
     delta.sent.clear();changed.setValue(15,Value{true,128.0000001});drain(changed,delta,5000);assert(delta.sent.empty());
-    changed.setValue(15,Value{true,129});drain(changed,delta,9999);assert(delta.sent.empty());
+    changed.setValue(15,Value{true,129});drain(changed,delta,9999);assert(delta.sent.size()==1);
     drain(changed,delta,10000);assert(delta.sent.size()==1&&delta.sent[0].payload=="129"&&!delta.sent[0].retain);
-    delta.sent.clear();changed.setValue(18,Value{});drain(changed,delta,15000);
+    delta.sent.clear();changed.setValue(channelIndex("victron/battery_voltage_v"),Value{});drain(changed,delta,15000);
     assert(delta.sent.size()==1&&delta.sent[0].payload=="null");
     delta.sent.clear();drain(changed,delta,20000);assert(delta.sent.empty());
-    changed.setValue(18,Value{true,0});drain(changed,delta,25000);assert(delta.sent.size()==1&&delta.sent[0].payload=="0");
+    changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});drain(changed,delta,25000);assert(delta.sent.size()==1&&delta.sent[0].payload=="0");
     delta.sent.clear();changed.setSourceAvailable(Source::Victron,false);drain(changed,delta,25001);
     assert(delta.sent.size()==2&&find(delta,"SolarBatteryTelemetry/victron/availability")->payload=="unavailable");
     assert(find(delta,"SolarBatteryTelemetry/capabilities")&&!find(delta,"SolarBatteryTelemetry/victron/battery_voltage_v"));
     delta.sent.clear();drain(changed,delta,30001);assert(delta.sent.empty());
-    changed.setValue(15,Value{true,129});changed.setValue(18,Value{true,0});changed.setSourceAvailable(Source::Victron,true);
+    changed.setValue(15,Value{true,129});changed.setValue(channelIndex("victron/battery_voltage_v"),Value{true,0});changed.setSourceAvailable(Source::Victron,true);
     drain(changed,delta,30002);assert(delta.sent.size()==4&&find(delta,"SolarBatteryTelemetry/victron/solar_power_w"));
     delta.sent.clear();changed.onConnected();drain(changed,delta,30003);assert(delta.sent.size()==7);
     delta.sent.clear();changed.requestRoot("delta-new",9);changed.tick(30004,delta);delta.online=true;changed.onConnected();delta.sent.clear();
@@ -211,10 +269,11 @@ int main() {
     failures.fail=false;drain(retried,failures,5249);assert(failures.sent.empty());drain(retried,failures,5250);
     assert(failures.sent.size()==1&&failures.sent[0].payload=="2");failures.sent.clear();drain(retried,failures,10250);assert(failures.sent.empty());
     retried.setValue(3,Value{true,1});drain(retried,failures,15250);assert(failures.sent.size()==1&&failures.sent[0].payload=="1");
-    // A snapshot remains coherent when live values change halfway through its metadata.
+    // A bounded snapshot completes; the next cycle immediately publishes intervening changes.
     Wire coherent;Publisher frozen;frozen.setValue(3,Value{true,48});frozen.setSourceAvailable(Source::Bms,true);frozen.onConnected();frozen.tick(0,coherent);
     frozen.setValue(3,Value{true,49});drain(frozen,coherent,0);assert(find(coherent,"SolarBatteryTelemetry/bms/voltage_v")->payload=="48");
-    coherent.sent.clear();drain(frozen,coherent,5000);assert(coherent.sent.size()==1&&coherent.sent[0].payload=="49");
+    assert(coherent.sent.back().payload=="49");
+    coherent.sent.clear();drain(frozen,coherent,5000);assert(coherent.sent.empty());
     // A partial delta keeps accepted fields, even when another source restarts the cycle.
     Wire partDelta;Publisher accepted;
     accepted.setValue(3,Value{true,10});accepted.setValue(4,Value{true,20});accepted.setSourceAvailable(Source::Bms,true);

@@ -17,10 +17,10 @@ class DependencyValidation(unittest.TestCase):
         self.root=ROOT/".pio"/"host-tests"/("cm-fixture-"+uuid.uuid4().hex)
         self.library=self.root/"reviewed-cm"
         for folder in ["src","webui"]:(self.library/folder).mkdir(parents=True,exist_ok=True)
-        (self.library/"library.json").write_text(json.dumps({"name":"ESP32 Configuration Manager","version":"4.5.0"}))
-        (self.library/"src/ConfigManager.h").write_text('#define CONFIGMANAGER_VERSION "4.5.0"\n')
+        (self.library/"library.json").write_text(json.dumps({"name":"ESP32 Configuration Manager","version":"4.7.0"}))
+        (self.library/"src/ConfigManager.h").write_text('#define CONFIGMANAGER_VERSION "4.7.0"\n')
         (self.library/"src/html_content.h").write_text('// [MOCKED!] Coherent fixture UI asset\n')
-        (self.library/"webui/package.json").write_text('{"version":"4.5.0"}')
+        (self.library/"webui/package.json").write_text('{"version":"4.7.0"}')
         old=self.root/"libdeps/usb/ESP32 Configuration Manager/src";old.mkdir(parents=True)
         (old/"html_content.h").write_text('// [MOCKED!] Old cached package must never satisfy local override\n')
         self.options={"custom_cm_path":self.library.as_posix(),"lib_deps":["symlink://"+self.library.as_posix()]}
@@ -32,10 +32,15 @@ class DependencyValidation(unittest.TestCase):
         runpy.run_path(str(ROOT/"tools/precompile_configmanager.py"),init_globals={"Import":lambda name:None,"env":FakeEnv(self.root,self.options)})
     def test_missing_override_fails_even_with_old_cached_ui(self):
         self.options.pop("custom_cm_path")
-        with self.assertRaisesRegex(RuntimeError,"local.*4.5") :self.run_script()
+        with self.assertRaisesRegex(RuntimeError,"local.*4.7") :self.run_script()
     def test_older_package_fails_early(self):
         (self.library/"library.json").write_text('{"name":"ESP32 Configuration Manager","version":"4.4.10"}')
-        with self.assertRaisesRegex(RuntimeError,"4.5") :self.run_script()
+        with self.assertRaisesRegex(RuntimeError,"4.7") :self.run_script()
+    def test_pre_compact_package_fails_even_with_coherent_mirrors(self):
+        (self.library/"library.json").write_text('{"name":"ESP32 Configuration Manager","version":"4.6.3"}')
+        (self.library/"src/ConfigManager.h").write_text('#define CONFIGMANAGER_VERSION "4.6.3"\n')
+        (self.library/"webui/package.json").write_text('{"version":"4.6.3"}')
+        with self.assertRaisesRegex(RuntimeError,"4.7") :self.run_script()
     def test_version_mirror_mismatch_fails(self):
         (self.library/"webui/package.json").write_text('{"version":"4.4.10"}')
         with self.assertRaisesRegex(RuntimeError,"mirror") :self.run_script()
