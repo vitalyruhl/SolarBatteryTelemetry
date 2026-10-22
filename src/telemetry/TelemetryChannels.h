@@ -46,7 +46,7 @@ inline constexpr std::size_t channelIndex(const char* suffix) {
  return channelCount;
 }
 inline constexpr const char* chargeStates[]={"off","fault","bulk","absorption","float","storage","equalization","other","unavailable"};
-inline constexpr const char* commandSuffixes[]={"bms/charge_enabled/set","bms/discharge_enabled/set"};
+inline constexpr const char* commandSuffixes[]={"bms/charge_enabled/set","bms/discharge_enabled/set","bms/permissions/set","bms/control_enabled/set","bms/emergency_off/set"};
 inline const char* sourceName(Source s){return s==Source::Bms?"bms":"victron";}
 inline const char* supportName(Support s){return s==Support::JbdReadout?"jbd_readout":s==Support::InstantReadout?"instant_readout":s==Support::Unsupported?"unsupported":s==Support::DerivedLater?"derived_later":"adapter_missing";}
 inline const char* typeName(FieldType t){switch(t){case FieldType::Boolean:return "bool";case FieldType::Real:return "real";case FieldType::Unsigned:return "unsigned";case FieldType::State:return "enum";case FieldType::Protection:return "text";}return "unknown";}
@@ -99,11 +99,11 @@ inline bool formatValue(const Channel& c,Value v,char* out,std::size_t capacity)
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
 inline bool capabilities(const char* root,char* out,std::size_t capacity,bool victronAvailable=false,bool bmsAvailable=false,bool controlsEnabled=false) {
- char a[topicLimit+1],b[topicLimit+1];
- if(!buildTopic(root,commandSuffixes[0],a,sizeof(a))||!buildTopic(root,commandSuffixes[1],b,sizeof(b)))return false;
+ char a[topicLimit+1],b[topicLimit+1],c[topicLimit+1];
+ if(!buildTopic(root,commandSuffixes[0],a,sizeof(a))||!buildTopic(root,commandSuffixes[1],b,sizeof(b))||!buildTopic(root,commandSuffixes[2],c,sizeof(c)))return false;
  const int n=std::snprintf(out,capacity,
-  "{\"schema_version\":1,\"read_only\":%s,\"commands_enabled\":%s,\"reserved_commands\":[\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"jbd_readout\",\"victron\":\"instant_readout\"},\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
-  controlsEnabled?"false":"true",controlsEnabled?"true":"false",a,b,bmsAvailable&&victronAvailable?"available":bmsAvailable||victronAvailable?"partial":"unavailable",bmsAvailable&&victronAvailable?"ok":bmsAvailable?"victron_unavailable":victronAvailable?"bms_unavailable":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
+  "{\"schema_version\":1,\"read_only\":%s,\"commands_enabled\":%s,\"reserved_commands\":[\"%s\",\"%s\",\"%s\"],\"source_state\":\"%s\",\"reason\":\"%s\",\"adapters\":{\"bms\":\"jbd_readout\",\"victron\":\"instant_readout\"},\"charge_states\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"]}",
+  controlsEnabled?"false":"true",controlsEnabled?"true":"false",a,b,c,bmsAvailable&&victronAvailable?"available":bmsAvailable||victronAvailable?"partial":"unavailable",bmsAvailable&&victronAvailable?"ok":bmsAvailable?"victron_unavailable":victronAvailable?"bms_unavailable":"no_fresh_data",chargeStates[0],chargeStates[1],chargeStates[2],chargeStates[3],chargeStates[4],chargeStates[5],chargeStates[6],chargeStates[7],chargeStates[8]);
  return n>=0&&static_cast<std::size_t>(n)<capacity&&static_cast<std::size_t>(n)<=payloadLimit;
 }
 }

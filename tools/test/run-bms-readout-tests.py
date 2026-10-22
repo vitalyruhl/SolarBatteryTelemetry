@@ -21,13 +21,14 @@ def main():
  template<class...T> void addToSettingsGroup(T...){}
  static void log_message(const char*,...){}
  };''']
+ parts.append('inline bool hostSaveOkay=true,hostWriteOkay=true;inline Preferences hostGatePrefs;template<class T> bool Config<T>::save(const T& value){if(!hostSaveOkay)return false;set(value);hostGatePrefs.failWrites=!hostWriteOkay;save(hostGatePrefs);return true;}')
  parent=ROOT/".pio/host-tests";parent.mkdir(parents=True,exist_ok=True)
  with tempfile.TemporaryDirectory(prefix="bms-readout-",dir=parent) as directory:
   out=Path(directory).resolve()
   if out.parent!=parent.resolve() or not out.name.startswith('bms-readout-'):raise RuntimeError('Unexpected temporary path')
   (out/'ConfigManager.h').write_text('\n'.join(parts),encoding='utf-8')
   (out/'BmsReadout.h').write_bytes((ROOT/'src/bms/BmsReadout.h').read_bytes())
-  (out/'runtime').mkdir();(out/'runtime/AppRuntimeMetadata.h').write_text('#pragma once\n#include <ConfigManager.h>\nnamespace sbt::metadata { template<class R,class F> void registerBmsCheckboxes(R&,F){} }\n')
+  (out/'runtime').mkdir();(out/'runtime/AppRuntimeMetadata.h').write_text('#pragma once\n#include <ConfigManager.h>\nnamespace sbt::metadata { template<class R,class F> void registerBmsCheckboxes(R&,F){} template<class R,class F> void registerBmsPairButtons(R&,F){} }\n')
   (out/'victron').mkdir()
   victron=(ROOT/'src/victron/VictronReadout.h').read_text()
   validated=helper.between(victron,'class ValidatedText final','class Readout {')
@@ -38,7 +39,7 @@ def main():
   command=[compiler,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-reorder-ctor','-Wno-unused-parameter']
   for include in [out,ROOT/'test/host',ROOT/'src',ROOT/'src/bms',json]:command+=['-I',str(include)]
   subprocess.run(command+[str(ROOT/'test/host/bms_readout_test.cpp'),'-o',str(exe)],check=True)
-  scenarios=sys.argv[1:] or ["disconnect","reconnect","query_timeout","completion_error","invalid_response","generation","write_error","short_timeout","long_timeout","rollover","ota","mac_change","mac_empty","master_disable","control_age","partial_pair","settings","historical_settings","short_control","queue_short","queue_pause","queue_stale"]
+  scenarios=sys.argv[1:] or ["gate_buffered_setting","gate_buffered_mqtt","gate_settings","gate_fence","emergency_alarm","emergency_clear","emergency_disabled","emergency_software","cached_manual","disconnect","reconnect","query_timeout","completion_error","invalid_response","generation","write_error","short_timeout","long_timeout","rollover","ota","mac_change","mac_empty","master_disable","control_age","partial_pair","settings","historical_settings","short_control","queue_short","queue_pause","queue_stale","command_settling"]
   for scenario in scenarios:subprocess.run([str(exe),scenario],check=True)
  print('BMS readout behavioral tests passed; temporary artifacts removed')
 if __name__=='__main__':main()

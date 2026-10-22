@@ -34,17 +34,17 @@ struct Fixture {
   uint16_t checksum=uint16_t(0-sum); e.data[e.size-3]=checksum>>8; e.data[e.size-2]=checksum; e.data[e.size-1]=0x77;
   readout.onEvent(e);
  }
- void basic() {
+ void basic(uint8_t flags=3,unsigned alarm=0) {
   assert(ble.lastWrite.size()==7&&ble.lastWrite[2]==3);
   std::vector<uint8_t> data(23); data[0]=0x14;data[1]=0x50;data[6]=0x27;data[7]=0x10;
-  data[19]=70;data[20]=3;data[21]=14; frame(3,data);
+  data[16]=alarm>>8;data[17]=alarm;data[19]=70;data[20]=flags;data[21]=14; frame(3,data);
  }
  void cells() {
   assert(ble.lastWrite.size()==7&&ble.lastWrite[2]==4);
   std::vector<uint8_t> data(28);for(unsigned i=0;i<14;++i){data[2*i]=0x0e;data[2*i+1]=0x80;}frame(4,data);
  }
  void connect() {event(cm::BleEventType::Connected);tick(hostNow);}
- void pair() {connect();basic();tick(hostNow+50);cells();assert(readout.snapshot().available);assert(readout.control().ready);}
+ void pair(unsigned alarm=0) {connect();basic(3,alarm);tick(hostNow+50);cells();assert(readout.snapshot().available);assert(readout.control().ready);}
  void unchanged(const bms::Snapshot& before) {
   const auto after=readout.snapshot();
   assert(after.available&&"complete telemetry must survive transient disconnect");
@@ -94,6 +94,21 @@ static void hardClear(const char* scenario){
  f.tick(hostNow+1);assert(!f.readout.snapshot().available);f.rejectControl();
  if(f.ble.paused){f.ble.paused=false;f.tick(hostNow+1);f.connect();assert(!f.readout.snapshot().available);f.rejectControl();}
 }
+static void cachedManual(){
+ Fixture f;f.pair();assert(f.readout.control().permissionsKnown);
+ JsonDocument doc;auto data=doc.to<JsonObject>();f.manager.runtime.provider(data);
+ assert(doc["requested_charge_enabled"]==true&&doc["charge_enabled"]==true);
+ assert(doc["requested_discharge_enabled"]==true&&doc["discharge_enabled"]==true);
+ bms::MosRequest request;request.target=bms::MosTarget::Charge;request.state=false;
+ request.deadline=hostNow+30000;std::memcpy(request.id,"actual-start",sizeof("actual-start"));
+ assert(f.readout.queueRequest(request));f.tick(hostNow);f.basic(3);f.tick(hostNow+50);
+ assert(f.ble.lastWrite.size()==9&&f.ble.lastWrite[5]==1);f.frame(0xe1,{});
+ f.manager.runtime.provider(data);
+ // ACK never invents a physical OFF state; fresh actual ON remains authoritative.
+ assert(doc["requested_charge_enabled"]==true&&doc["charge_enabled"]==true);
+ assert(!std::strcmp(f.readout.control().result.phase,"acknowledged"));
+ assert(!f.readout.queueRequest(request));assert(!std::strcmp(f.readout.control().admission,"rejected_debounce"));
+}
 static void masterDisable(){Fixture f;f.pair();auto sample=f.readout.snapshot();f.setting<bool>("BmsControl").set(false);f.tick(hostNow+1);f.unchanged(sample);f.rejectControl();}
 static void strictControlAge(){Fixture f;f.pair();const auto sample=f.readout.snapshot();f.tick(sample.receivedAt+29999);assert(f.readout.control().ready);f.tick(sample.receivedAt+30000);f.unchanged(sample);f.rejectControl();}
 static void partialPair(){Fixture f;f.connect();f.basic();assert(!f.readout.snapshot().available);f.event(cm::BleEventType::Disconnected);f.connect();f.frame(4,std::vector<uint8_t>(28,1));assert(!f.readout.snapshot().available);f.rejectControl();}
@@ -121,9 +136,69 @@ static void queueGate(const char* scenario){
  assert(!f.readout.queueRequest(request));
 }
 static void shortControl(){Fixture f;f.setting<int>("BmsDataTimeout").set(1);f.pair();auto sample=f.readout.snapshot();f.tick(sample.receivedAt+999);assert(f.readout.control().ready);f.tick(sample.receivedAt+1000);assert(!f.readout.snapshot().available);f.rejectControl();}
+static void commandSettling(){
+ Fixture f;f.pair();bms::MosRequest request;request.target=bms::MosTarget::Charge;
+ request.state=false;request.deadline=hostNow+30000;
+ assert(f.readout.queueRequest(request));f.tick(hostNow);
+ f.setting<bool>("BmsControl").set(false);f.tick(hostNow+1);f.basic(3);f.tick(hostNow+50);
+ assert(f.ble.mosWrites==0&&!f.readout.control().enabled&&!f.readout.control().pending);
+}
+static void gateSettings(){
+ Fixture f;bms::MosRequest gate;gate.target=bms::MosTarget::Gate;gate.state=false;gate.deadline=hostNow+30000;
+ assert(f.readout.queueGate(gate));f.tick(hostNow+149);assert(!f.readout.control().enabled&&f.setting<bool>("BmsControl").get());
+ f.tick(hostNow+1);assert(!f.setting<bool>("BmsControl").get());
+ gate.state=true;assert(f.readout.queueGate(gate));f.tick(hostNow+50);
+ gate.state=false;assert(f.readout.queueGate(gate));f.tick(hostNow+150);assert(!f.setting<bool>("BmsControl").get());
+ gate.state=true;assert(f.readout.queueGate(gate));f.tick(hostNow+150);assert(f.setting<bool>("BmsControl").get());
+ hostSaveOkay=false;gate.state=false;assert(f.readout.queueGate(gate));f.tick(hostNow+150);
+ assert(f.setting<bool>("BmsControl").get()&&f.readout.control().enabled);
+ assert(!std::strcmp(f.readout.control().result.reason,"setting_save_failed"));
+ hostSaveOkay=true;hostWriteOkay=false;assert(f.readout.queueGate(gate));f.tick(hostNow+150);
+ assert(f.setting<bool>("BmsControl").get()&&f.readout.control().enabled);
+ assert(!std::strcmp(f.readout.control().result.reason,"setting_save_failed"));
+ hostWriteOkay=true;assert(f.readout.queueGate(gate));f.readout.cancelCommands();f.tick(hostNow+200);
+ assert(f.setting<bool>("BmsControl").get()&&f.readout.control().enabled);
+ assert(f.ble.mosWrites==0);
+}
+static void gateBuffered(bool mqtt){
+ Fixture f;f.pair();f.ble.bufferWrites=true;
+ bms::MosRequest request;request.target=bms::MosTarget::Charge;request.state=false;request.deadline=hostNow+30000;
+ assert(f.readout.queueRequest(request));f.tick(hostNow);f.ble.drainWrites();f.basic(3);f.tick(hostNow+50);
+ assert(!f.ble.buffered.empty()&&f.ble.buffered.back().data[2]==0xe1&&f.ble.mosWrites==0);
+ if(mqtt){bms::MosRequest gate;gate.target=bms::MosTarget::Gate;gate.state=false;gate.deadline=hostNow+30000;assert(f.readout.queueGate(gate));}
+ else f.setting<bool>("BmsControl").set(false);
+ // The worker drains before the next application loop or deferred persistence.
+ f.ble.drainWrites();assert(f.ble.mosWrites==0);
+}
+static void gateFence(){
+ Fixture f;f.pair();bms::MosRequest request;request.target=bms::MosTarget::Charge;request.state=false;request.deadline=hostNow+30000;
+ assert(f.readout.queueRequest(request));f.tick(hostNow);f.basic(3);
+ bms::MosRequest gate;gate.target=bms::MosTarget::Gate;gate.state=false;gate.deadline=hostNow+30000;
+ assert(f.readout.queueGate(gate));f.tick(hostNow+50);assert(f.ble.mosWrites==0);
+ f.tick(hostNow+150);assert(!f.readout.control().enabled&&f.ble.mosWrites==0);
+}
+static void emergency(const char* scenario){
+ const unsigned alarm=!std::strcmp(scenario,"emergency_software")?0x1000:0x20;
+ Fixture f;f.pair(alarm);bms::MosRequest request;request.target=bms::MosTarget::Both;
+ request.emergency=true;request.state=request.dischargeState=false;request.deadline=hostNow+30000;
+ if(!std::strcmp(scenario,"emergency_disabled")){f.setting<bool>("BmsControl").set(false);f.tick(hostNow+1);}
+ if(!std::strcmp(scenario,"emergency_disabled")||!std::strcmp(scenario,"emergency_software")){
+  assert(!f.readout.queueRequest(request));assert(f.ble.mosWrites==0);return;
+ }
+ assert(f.readout.queueRequest(request));f.tick(hostNow);f.basic(3,!std::strcmp(scenario,"emergency_clear")?0:alarm);f.tick(hostNow+50);
+ if(!std::strcmp(scenario,"emergency_clear")){assert(f.ble.mosWrites==0);return;}
+ assert(f.ble.mosWrites==1&&f.ble.lastWrite[5]==3);f.frame(0xe1,{});f.tick(hostNow+500);
+ assert(f.ble.mosWrites==1);
+}
 int main(int argc,char** argv){
  assert(argc==2);const char* scenario=argv[1];
- if(!std::strcmp(scenario,"disconnect"))disconnectRetention();
+ if(!std::strcmp(scenario,"gate_buffered_setting"))gateBuffered(false);
+ else if(!std::strcmp(scenario,"gate_buffered_mqtt"))gateBuffered(true);
+ else if(!std::strcmp(scenario,"gate_settings"))gateSettings();
+ else if(!std::strcmp(scenario,"gate_fence"))gateFence();
+ else if(!std::strncmp(scenario,"emergency_",10))emergency(scenario);
+ else if(!std::strcmp(scenario,"cached_manual"))cachedManual();
+ else if(!std::strcmp(scenario,"disconnect"))disconnectRetention();
  else if(!std::strcmp(scenario,"reconnect"))reconnectQualification();
  else if(!std::strcmp(scenario,"short_timeout")||!std::strcmp(scenario,"long_timeout")||!std::strcmp(scenario,"rollover"))timeout(scenario);
  else if(!std::strcmp(scenario,"ota")||!std::strcmp(scenario,"mac_change")||!std::strcmp(scenario,"mac_empty"))hardClear(scenario);
@@ -133,6 +208,7 @@ int main(int argc,char** argv){
  else if(!std::strcmp(scenario,"settings"))strictSettings();
  else if(!std::strcmp(scenario,"historical_settings"))historicalSettings();
  else if(!std::strcmp(scenario,"short_control"))shortControl();
+ else if(!std::strcmp(scenario,"command_settling"))commandSettling();
  else if(!std::strcmp(scenario,"queue_short")||!std::strcmp(scenario,"queue_pause")||!std::strcmp(scenario,"queue_stale"))queueGate(scenario);
  else {assert(!std::strcmp(scenario,"query_timeout")||!std::strcmp(scenario,"completion_error")||!std::strcmp(scenario,"invalid_response")||!std::strcmp(scenario,"generation")||!std::strcmp(scenario,"write_error"));errors(scenario);}
  std::printf("BMS Readout %s passed\n",scenario);

@@ -18,7 +18,7 @@ The collector does not publish Home Assistant discovery configuration. Update th
 
 ## Fixed channels
 
-All 26 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained. The publish interval limits ordinary value updates to at most once per 5 seconds (or the configured interval when longer); it is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. At most four normal publications are attempted per policy tick, with a finite cursor and a 250 ms admission retry. A pending old-root retirement can add three sends before that normal budget; a root transition or configuration disconnect retires at most two advertised roots (six sends). CM's independent automatic online/System-Info messages are outside this preparation budget. A failed item does not advance its field cache or mark the snapshot delivered. Already accepted fields keep their cache across partial failures; retries wait at least 250 ms, including when a source transition replaces the pending snapshot. The fixed cache holds one `Value` per channel and a bitmask, using scalar serialization for equality and validity transitions, plus numeric deadbands for valid real measurements. There is no historical sample backlog.
+All 26 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained except for the Victron error and daily-yield scalars described in the 1.4.0 display-history section. The publish interval limits ordinary value updates to at most once per 5 seconds (or the configured interval when longer); it is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. At most four normal publications are attempted per policy tick, with a finite cursor and a 250 ms admission retry. A pending old-root retirement can add three sends before that normal budget; a root transition or configuration disconnect retires at most two advertised roots (six sends). CM's independent automatic online/System-Info messages are outside this preparation budget. A failed item does not advance its field cache or mark the snapshot delivered. Already accepted fields keep their cache across partial failures; retries wait at least 250 ms, including when a source transition replaces the pending snapshot. The fixed cache holds one `Value` per channel and a bitmask, using scalar serialization for equality and validity transitions, plus numeric deadbands for valid real measurements. There is no historical sample backlog in the live publisher. The separate display-history publisher may add one MQTT admission per loop and keeps only two last-valid fields.
 
 | Source | Leaf | Type | Unit / meaning |
 | --- | --- | --- | --- |
@@ -53,21 +53,29 @@ Topics are `<base>/<source>/<leaf>`. Both `<base>/bms/availability` and `<base>/
 
 ## Guarded command contract
 
-Subscribe only to `<base>/bms/charge_enabled/set` and `<base>/bms/discharge_enabled/set`. Send a non-retained QoS0 JSON envelope, never a toggle or bare boolean:
+Subscribe to `<base>/bms/charge_enabled/set`, `<base>/bms/discharge_enabled/set` and `<base>/bms/permissions/set`. Send a non-retained QoS0 JSON envelope, never a toggle or bare boolean:
 
 ```json
 {"state":false,"request_id":"sil_stop_123","session":"CURRENT_32_HEX_CHARACTER_TOKEN","expires_at":1792170000}
 ```
 
+Single-target commands require a known acknowledged software-request baseline or the peer-bound explicit manual baseline described in the 1.4.4 section below. Joint initialization remains available via `bms/permissions/set`, with exactly five fields:
+
+```json
+{"charge_enabled":true,"discharge_enabled":false,"request_id":"manual_pair_123","session":"CURRENT_32_HEX_CHARACTER_TOKEN","expires_at":1792170000}
+```
+
+The pair request uses the same gate, replay ledger, freshness and expiry constraints. Both permission fields must be booleans; missing, extra or duplicate fields are rejected. No joint request is sent automatically.
+
 The example expiry is illustrative: use current UTC plus at most 30 seconds. `state` must be boolean; `request_id` is 1-32 ASCII letters, digits, hyphens or underscores. Maximum payload is 256 bytes. The current random session comes from retained `<base>/bms/control`; reconnect/root changes rotate it and cancel outstanding intent. UTC must be synchronized. Expired, old-session, duplicate, malformed and unsupported requests are rejected. The 16-entry replay ledger rotates the session when exhausted rather than forgetting accepted IDs. Session tokens prevent obsolete command replay; they are not secrets or broker authentication.
 
-`bms/control` contains enabled, ready, pending, session and reason. Readiness additionally requires fresh BMS data, installation enablement, an active command subscription, a valid clock and no OTA pause. `bms/control/result` is non-retained and contains request_id, phase, reason, actual charge_enabled/discharge_enabled and observed_current_a. Unknown observations are null. Readback confirms reported permission only, not physical current interruption. Ordinary MOS scalar topics remain actual feedback; never optimistically set them from a requested state. See [BMS transaction](BMS.md#guarded-mos-permissions).
+`bms/control` contains enabled, ready, pending, session, reason, permissions_known, nullable requested_charge_enabled/requested_discharge_enabled, and mos_readback (unknown/unavailable/matching/different). The requested values are the last acknowledged software request in this collector session, not actual conducting FET flags. They become null after collector restart, peer reconfiguration and after an uncertain transmitted write. Ordinary same-peer BLE reconnection preserves the last acknowledged intent; source freshness still interlocks all new commands. A new explicit joint request or a new manual single-target request carrying the peer-bound historical ACK pair can re-establish the baseline; no request is replayed automatically. Readiness additionally requires fresh BMS data, installation enablement, an active command subscription, a valid clock and no OTA pause. `bms/control/result` is non-retained and contains request_id, phase, reason, actual charge_enabled/discharge_enabled observed_current_a and session. Unknown observations are null. `acknowledged: ok` confirms the software write ACK, not physical isolation; actual MOS feedback can differ during charging. Ordinary MOS scalar topics remain actual feedback; never optimistically set them from a requested state. See [BMS transaction](BMS.md#guarded-mos-permissions).
 
 `bms/health` and `victron/health` are retained status objects with available, reason, sample_sequence and sample_age_ms. They refresh at a 5-second cadence and on transitions, independently of numeric deadbands. A controller should require collector/source availability, a recently received health heartbeat, and an advancing sequence after reconnect before using retained data as fresh. A 15-second receiver deadline is appropriate for this cadence. Sequence values reset on collector reboot and wrap; compare advancement rather than global ordering. Measurement timestamps describe protocol receipt, not synchronized acquisition across devices.
 
 A separate bounded status publisher caches at most one latest object per status topic, publishes one item per loop and retries failed local admission after 250 ms. It replays status after connection. Old-root health/control records may remain retained; consumers must always combine them with that root's collector and source availability. Command results are informational and cannot actuate anything.
 
-[Home Assistant additions](home-assistant-bms-controls.yaml) provide eight additional sensors and two non-optimistic MQTT switches. Merge their lists into existing YAML; do not duplicate existing BMS/Victron entities. The controls remain unavailable while the installation gate is disabled. Existing voltage entities retain two-decimal display precision.
+[Home Assistant additions](home-assistant-bms-controls.yaml) provide additional diagnostics, two non-optimistic request switches and four explicit joint request buttons. Merge their lists into existing YAML; do not duplicate existing BMS/Victron entities. The controls remain unavailable while the installation gate is disabled. Existing voltage entities retain two-decimal display precision.
 
 
 Values have explicit validity. Real values must be finite; unsigned values must be integral and within uint32 range; invalid booleans/enums are null. Unsupported and deferred fields serialize as null even if accidentally given a value, but initial unknown fields are not published. While a source stays available, a previously published valid field becoming invalid sends `null` once; valid zero remains `0` (or `false` for boolean fields). Source loss publishes availability/capabilities without a burst of null field messages. The JBD and Victron adapters establish source availability from validated, fresh protocol data.
@@ -171,3 +179,79 @@ new complete valid cycle on a healthy connection can restore readiness, and the
 existing 30-second command freshness cap still applies. MQTT commands remain
 non-retained. Measurement retain flags are unchanged; `SBTMQTTRefresh` controls
 periodic resend, not the lifetime of a source measurement.
+
+
+## 1.4.0 Victron display history
+
+The existing numeric `victron/error_code` and `victron/yield_today_wh` topics now use MQTT RETAIN. Other measurement topics remain non-retained. Collector `/status` and source `/availability` continue to gate live consumers, including SIL; missing BLE data never becomes a fabricated valid 0 W measurement. Scalar null transitions remain explicit; a last-valid display cache is separate.
+
+Two additional retained topics support Home Assistant display history:
+
+| Topic suffix | Payload example |
+| --- | --- |
+| `victron/last_valid/error_code` | `{"value":0,"received_at":1792600000}` |
+| `victron/last_valid/yield_today_wh` | `{"value":1230,"received_at":1792600000}` |
+
+`received_at` is the UTC Unix reception time in seconds, estimated from the synchronized clock minus sample age. It is `null` when the clock was not valid at acquisition. Only a new, valid field acquisition updates that field's value and time. Invalid fields, source loss, repeated application snapshots and reconnect replay never re-date history or replace it with zero. Each field publishes at most once per five seconds during normal acquisition; reconnect/root changes replay pending history without changing its time. OTA pause applies to this path as to other MQTT publications. History lives in RAM and at the broker; a reboot with no new BLE reading leaves the broker's prior retained history intact. No NVS measurement writes are added.
+
+Display consumers may show this history independently of live BLE availability, but must identify it as last received and expose its reception time. A value with an unknown reception date must not be labelled as today's yield; compare a valid reception timestamp with the Home Assistant local date before displaying it as today's value. An older daily reading may remain visible with its original date. Before any valid acquisition, no history value is fabricated.
+
+The Home Assistant power display may use 0 W plus an explicit missing-data indicator when the raw PV measurement is unavailable. That display fallback must not replace the raw measurement, feed SIL, or be used for energy integration.
+
+### Focused validation for 1.4.0
+
+The retained-scalar regression failed on the previous non-retained publisher. The history regression failed on the empty interface, and the busy-stream regression exposed starvation before the per-field cadence/fair cursor correction. All four affected host programs now pass: telemetry contract, Victron history, status publisher and MQTT lifecycle. They cover loss/reconnect, per-field invalid values, null clock, original reception time, admission retry, monotonic rollover, busy-stream fairness and unchanged raw source gating.
+
+The normal USB-profile build passed with the selected local CM 4.8.0 checkout: 1,389,477 flash bytes of 1,835,008 and 81,336 static RAM bytes. The existing NimBLE LTO type-mismatch warning remains. This is local software validation; the candidate has not been uploaded and new retained-topic delivery on the device remains pending.
+
+### HA control gate availability (2026-10-22)
+
+Do not expose the diagnostic reason `unavailable` as the state of `sensor.sbt_bms_control`: HA treats that reserved word as entity unavailability and `has_value()` then also hides the still-enabled master gate. The example maps this diagnostic state to `not_ready`, while retaining the original JSON attributes and separate collector-status availability. A real collector offline event still makes the entity unavailable. Home keeps the existing individual Allow switches; explicit joint commissioning actions are not shown on its main MOS card.
+
+
+## Historical 1.4.4 manual restart recovery (superseded by 1.4.5)
+
+The following records the prior model; it is not the current HA control contract.
+
+`bms/permissions/acknowledged` is a retained historical display baseline containing
+`peer`, `charge_enabled` and `discharge_enabled`. Only an E1-acknowledged collector
+pair can produce it. It is output-only: SBT never subscribes to it, restores a
+pending request from it or sends MOS commands on boot. Reboot still starts with
+no pending request and an unknown collector ledger. A peer change prevents use
+of an old device's retained pair.
+
+The existing four-field charge/discharge command remains supported. HA may add
+exactly three fields to a new explicit single-target command:
+`baseline_charge_enabled` (boolean), `baseline_discharge_enabled` (boolean), and
+`peer` (canonical BMS MAC). All seven fields must fit the existing 256-byte bound.
+The current session, expiry, control gate, fresh source and mailbox checks remain.
+The peer must match the currently configured BMS. When the collector ledger is
+known it preserves its current opposite bit, ignoring the possibly older supplied
+baseline. Otherwise the explicitly supplied pair is used only for this manual
+request. Only a valid E1 ACK establishes a new collector baseline and updates the
+retained display pair. Failure/uncertain writes do not update the historical pair;
+retry requires a new manual request. SIL continues to consume fresh `bms/control`,
+not this historical topic.
+
+`bms/control/result` remains non-retained and includes the MQTT `session`.
+Each new connection publishes `idle: no_request` for the new session, suppressing
+old transaction replay. HA invalidates a result from a different session.
+`SBTMQTTRefresh` (5-3600 s, default 60 s) now refreshes valid health, control,
+current-session result and known acknowledged-pair slots as well as measurements
+and availability. Updates remain immediate; the periodic resend repairs missed
+state delivery while connected. Unknown/unsupported measurements are not invented.
+During a fresh collector boot, the retained historical pair stays in the broker
+until another command is actually acknowledged.
+
+
+## 1.4.5 Actual MOS status and common persistent gate
+
+The current [BMS contract](BMS.md#guarded-mos-permissions) supersedes the historical ACK-pair display model. `bms/charge_enabled` and `bms/discharge_enabled` are retained actual readback and drive HA switches. `bms/permissions/acknowledged` is retired as a control/display authority; its historical retained broker value is never subscribed to or replayed. There is no startup initialization command.
+
+Single-direction commands use only `state`, `request_id`, `session`, `expires_at`; the existing strict current-session/30-second/replay and 256-byte envelope checks remain. `bms/control_enabled/set` uses the same envelope to update and save the existing ESP `BmsControl` setting, including while BMS control readiness is unavailable. It does not write a MOS register. OFF immediately fences queued BLE writes; ON takes effect only after successful saving. Last desired gate changes coalesce for 150 ms.
+
+`bms/emergency_off/set` accepts only `state:false` and writes BothOff only with the common gate on, fresh readiness and current hard-fault bits 0-11, rechecked in BasicInfo immediately before E1. SIL has no economic/SOC MOS-control path and no automatic enable/retry. Gate OFF has no emergency exception.
+
+Changed scalar data starts publication on the next bounded cycle without waiting for the delta interval. An in-progress snapshot completes so continuously changing early channels cannot starve later MOS channels. Existing deadbands remain; complete refresh (default 60 seconds, configurable 5-3600) republishes valid status, health, scalar measurements and current-session result. Status never generates a command. Results are non-retained; each collector/MQTT session starts with `idle: no_request`.
+
+The [MQTT include](home-assistant-bms-controls.yaml) and separate [template gate include](home-assistant-bms-gate.yaml) retain existing entity identifiers. HA is non-optimistic and never retries a request in response to status. Actual-state switches remain visible while the common gate is off or control is busy; the backend rejects all disabled, stale, concurrent or debounced commands. A requested value may revert to actual readback; the operator can explicitly retry after the transaction ends.

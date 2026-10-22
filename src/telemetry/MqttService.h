@@ -8,6 +8,7 @@
 #include "MqttLoopPolicy.h"
 #include "MqttUiSettings.h"
 #include "StatusPublisher.h"
+#include "VictronHistoryPublisher.h"
 #include "BmsCommandEnvelope.h"
 #include "bms/BmsReadout.h"
 #include <ctime>
@@ -18,23 +19,27 @@ class MqttService final : public Transport {
  cm::MQTTManager& mqtt_=cm::MQTTManager::instance();
  ConfigMailbox mailbox_;
  MqttConfig desired_{};uint32_t seen_=0;
- Publisher publisher_;
+ Publisher publisher_;VictronHistoryPublisher victronHistory_;
  StatusPublisher statuses_;CommandSession session_;bms::Readout* bms_=nullptr;
  bool subscribed_=false;uint32_t subscribeAt_=0,lastResultSequence_=0;
  struct Health {bool initialized=false,available=false;const char* reason="unknown";uint32_t sentAt=0,receivedAt=0,sequence=0;} health_[2];
- void newSession(){statuses_.clearResult();char token[33];for(unsigned i=0;i<4;++i)std::snprintf(token+i*8,9,"%08lx",static_cast<unsigned long>(esp_random()));session_.begin(token);if(bms_)bms_->cancelCommands();}
+ void newSession(){statuses_.clearResult();char token[33];for(unsigned i=0;i<4;++i)std::snprintf(token+i*8,9,"%08lx",static_cast<unsigned long>(esp_random()));session_.begin(token);if(bms_){lastResultSequence_=bms_->control().result.sequence;bms_->cancelCommands();}result("","idle","no_request");}
  void subscribeCommands(uint32_t now){subscribeAt_=now;subscribed_=true;for(const auto* suffix:commandSuffixes){char topic[topicLimit+1];subscribed_=buildTopic(publisher_.root(),suffix,topic,sizeof(topic))&&mqtt_.subscribe(topic,0)&&subscribed_;}}
  void result(const char* id,const char* phase,const char* reason){char payload[384];const auto sample=bms_?bms_->snapshot():bms::Snapshot{};
-  if(formatCommandResult(id,phase,reason,sample.values.data(),sample.available,payload,sizeof(payload)))statuses_.set(3,payload);
+  if(formatCommandResult(id,phase,reason,sample.values.data(),sample.available,payload,sizeof(payload),session_.token()))statuses_.set(3,payload);
  }
  void message(const char* topic,const byte* payload,unsigned int length){
   const auto n=std::strlen(publisher_.root());if(std::strncmp(topic,publisher_.root(),n)||topic[n]!='/')return;
   bms::MosRequest request;const char* reason=session_.accept(topic+n+1,reinterpret_cast<const char*>(payload),length,std::time(nullptr)>0?static_cast<uint64_t>(std::time(nullptr)):0,millis(),request);
   if(std::strcmp(reason,"ok")){result("","rejected",reason);if(!std::strcmp(reason,"session_exhausted"))newSession();return;}
   if(!bms_){result(request.id,"rejected","adapter_unavailable");return;}
+  if(request.target==bms::MosTarget::Gate){
+   if(otaPaused_.load()||!subscribed_||!bms_->queueGate(request))result(request.id,"rejected","setting_unavailable");
+   return;
+  }
   const auto state=bms_->control();
   if(otaPaused_.load()||!state.ready||!subscribed_){result(request.id,"rejected",otaPaused_.load()?"ota":!state.enabled?"disabled":state.pending?"busy":"unavailable");return;}
-  if(!bms_->queueRequest(request))result(request.id,"rejected","busy");
+  if(!bms_->queueRequest(request))result(request.id,"rejected",bms_->control().admission);
  }
  void health(unsigned index,bool available,const char* reason,uint32_t receivedAt,uint32_t sequence,uint32_t now){
   auto& state=health_[index];const bool changed=!state.initialized||available!=state.available||std::strcmp(reason,state.reason);
@@ -47,7 +52,10 @@ class MqttService final : public Transport {
  }
  void controlStatus(){if(!bms_)return;const auto state=bms_->control();const bool clockReady=std::time(nullptr)>=1577836800;
   const bool ready=state.ready&&clockReady&&subscribed_&&mqtt_.isConnected()&&!otaPaused_.load();publisher_.setControl(state.enabled,ready);
-  char payload[384];std::snprintf(payload,sizeof(payload),"{\"enabled\":%s,\"ready\":%s,\"pending\":%s,\"session\":\"%s\",\"reason\":\"%s\"}",state.enabled?"true":"false",ready?"true":"false",state.pending?"true":"false",session_.token(),!state.enabled?"disabled":!clockReady?"clock_unavailable":state.pending?"busy":ready?"ok":"unavailable");statuses_.set(2,payload);
+  char payload[384];
+  if(formatControlStatus(state.enabled,ready,state.pending,session_.token(),!state.enabled?"disabled":!clockReady?"clock_unavailable":state.pending?"busy":ready?"ok":"unavailable",
+      state.permissionsKnown,state.permissionMask,state.readback,payload,sizeof(payload),state.peer))statuses_.set(2,payload);
+  statuses_.clearPermissions(); // Retire historical ACK state as a control/display source.
   if(state.result.sequence!=lastResultSequence_){lastResultSequence_=state.result.sequence;result(state.result.id,state.result.phase,state.result.reason);}
  }
 
@@ -95,7 +103,7 @@ public:
   // Deliberately no MQTTManager::attach(): it would expose loop-owned settings to AsyncWeb writes.
   // Standalone public settings/begin/loop retain System-Info/ESP and /WiFi conventions.
   mqtt_.setBufferSize(1536);mqtt_.setRetryInterval(10000);mqtt_.setMaxRetries(10);mqtt_.setKeepAlive(30);
-  mqtt_.onMQTTConnect([this](){publisher_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
+  mqtt_.onMQTTConnect([this](){publisher_.onConnected();victronHistory_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
   mqtt_.onMQTTDisconnect([this](){session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();});
   mqtt_.onMessage([this](const char* topic,const byte* payload,unsigned int length){message(topic,payload,length);});
   installCallbacks();
@@ -128,6 +136,7 @@ public:
   publisher_.setSourceAvailable(Source::Bms,available);
  }
  void updateVictron(const Value* values,bool available,const char* reason,uint32_t receivedAt,uint32_t now){
+  victronHistory_.observe(values,available,receivedAt,now,static_cast<int64_t>(std::time(nullptr)));
   health(1,available,reason,receivedAt,0,now);
   for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Victron)publisher_.setValue(i,available?values[i]:Value{});
   publisher_.setSourceAvailable(Source::Victron,available);
@@ -150,7 +159,7 @@ public:
    }
    auto& live=mqtt_.settings();
    live.enableMQTT.set(next.enabled);mqtt_.setServer(next.server,next.port);mqtt_.setCredentials(next.username,next.password);mqtt_.setClientId(next.clientId);
-   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);
+   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);statuses_.setRefreshInterval(next.fullRefreshMs);
    if(reconnect&&next.enabled)configure(publisher_.root());
   }
   publisher_.requestRoot(desired_.root,std::strlen(desired_.root));
@@ -158,6 +167,7 @@ public:
   runPreparedMqttLoop(publisher_,now,*this,desired_.enabled&&desired_.server[0],
    [this](){return otaPaused_.load();},[this](){mqtt_.loop();});
   controlStatus();statuses_.tick(now,publisher_.root(),*this);
+  victronHistory_.tick(now,publisher_.root(),*this);
   updateView();
  }
  bool connected() const override{return mqtt_.isConnected();}

@@ -1,8 +1,8 @@
 #pragma once
 
 // WiFi/UI/OTA, passive Victron Instant Readout and read-only MQTT telemetry.
-#define APP_VERSION "1.3.0"
-#define VERSION_DATE "2026-10-21"
+#define APP_VERSION "1.4.5"
+#define VERSION_DATE "2026-10-22"
 
 #if __has_include("secret/secrets.h")
 #include "secret/secrets.h"

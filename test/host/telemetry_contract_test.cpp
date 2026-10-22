@@ -106,7 +106,28 @@ void testMinuteRefresh(){
  Wire wrapped;Publisher q;q.setValue(3,{true,1});q.setSourceAvailable(Source::Bms,true);q.onConnected();drain(q,wrapped,0xfffffff0u);wrapped.sent.clear();
  drain(q,wrapped,0xea4fu);assert(wrapped.sent.empty());drain(q,wrapped,0xea50u);assert(wrapped.sent.size()==6);
 }
+static void testVictronRetainedMeasurements() {
+    Wire wire;Publisher publisher;
+    publisher.setSourceAvailable(Source::Victron,true);
+    publisher.setValue(channelIndex("victron/error_code"),{true,0});
+    publisher.setValue(channelIndex("victron/yield_today_wh"),{true,1230});
+    publisher.setValue(channelIndex("victron/solar_power_w"),{true,42});
+    publisher.onConnected();drain(publisher,wire,0);
+    const auto* error=find(wire,"SolarBatteryTelemetry/victron/error_code");
+    const auto* yield=find(wire,"SolarBatteryTelemetry/victron/yield_today_wh");
+    const auto* power=find(wire,"SolarBatteryTelemetry/victron/solar_power_w");
+    assert(error&&error->payload=="0"&&error->retain);
+    assert(yield&&yield->payload=="1230"&&yield->retain);
+    assert(power&&power->payload=="42"&&!power->retain);
+    wire.sent.clear();publisher.setSourceAvailable(Source::Victron,false);drain(publisher,wire,1);
+    const auto* availability=find(wire,"SolarBatteryTelemetry/victron/availability");
+    assert(availability&&availability->payload=="unavailable");
+    assert(!find(wire,"SolarBatteryTelemetry/victron/error_code"));
+    assert(!find(wire,"SolarBatteryTelemetry/victron/yield_today_wh"));
+    assert(!find(wire,"SolarBatteryTelemetry/victron/solar_power_w"));
+}
 int main() {
+    testVictronRetainedMeasurements();
     assert(channelCount==26);
     {Wire wire;Publisher publisher;const auto top=channelIndex("bms/temperature_1_c"),bottom=channelIndex("bms/temperature_2_c");
      publisher.setSourceAvailable(Source::Bms,true);publisher.setValue(top,{true,17.5});publisher.setValue(bottom,{true,21.5});publisher.onConnected();drain(publisher,wire,0);
@@ -186,7 +207,7 @@ int main() {
     assert(w.will=="latest/status"&&std::strcmp(p.root(),"latest")==0);
     w.online=true;p.onConnected();drain(p,w,6200);assert(!find(w,"latest/bms/voltage_v")&&find(w,"latest/status"));
     Wire wrap;Publisher q;q.setValue(3,Value{true,1});q.setSourceAvailable(Source::Bms,true);q.onConnected();drain(q,wrap,0xfffffff0u);auto n=wrap.sent.size();q.setValue(3,Value{true,2});
-    drain(q,wrap,0x00001377u);assert(wrap.sent.size()==n);drain(q,wrap,0x00001378u);assert(wrap.sent.size()==n+1);
+    drain(q,wrap,0x00001377u);assert(wrap.sent.size()==n+1);drain(q,wrap,0x00001378u);assert(wrap.sent.size()==n+1);
     Wire paused;Publisher r;r.onConnected();r.setPaused(true);drain(r,paused,100);assert(paused.sent.empty());
     r.setPaused(false);drain(r,paused,101);assert(paused.sent.size()==5);
     Wire partial;Publisher partialPolicy;partialPolicy.onConnected();partial.failAt=3;
@@ -227,7 +248,7 @@ int main() {
     changed.setSourceAvailable(Source::Victron,true);changed.onConnected();drain(changed,delta,0);
     assert(delta.sent.size()==7&&find(delta,"SolarBatteryTelemetry/victron/battery_voltage_v")->payload=="0");
     delta.sent.clear();changed.setValue(15,Value{true,128.0000001});drain(changed,delta,5000);assert(delta.sent.empty());
-    changed.setValue(15,Value{true,129});drain(changed,delta,9999);assert(delta.sent.empty());
+    changed.setValue(15,Value{true,129});drain(changed,delta,9999);assert(delta.sent.size()==1);
     drain(changed,delta,10000);assert(delta.sent.size()==1&&delta.sent[0].payload=="129"&&!delta.sent[0].retain);
     delta.sent.clear();changed.setValue(channelIndex("victron/battery_voltage_v"),Value{});drain(changed,delta,15000);
     assert(delta.sent.size()==1&&delta.sent[0].payload=="null");
@@ -248,10 +269,11 @@ int main() {
     failures.fail=false;drain(retried,failures,5249);assert(failures.sent.empty());drain(retried,failures,5250);
     assert(failures.sent.size()==1&&failures.sent[0].payload=="2");failures.sent.clear();drain(retried,failures,10250);assert(failures.sent.empty());
     retried.setValue(3,Value{true,1});drain(retried,failures,15250);assert(failures.sent.size()==1&&failures.sent[0].payload=="1");
-    // A snapshot remains coherent when live values change halfway through its metadata.
+    // A bounded snapshot completes; the next cycle immediately publishes intervening changes.
     Wire coherent;Publisher frozen;frozen.setValue(3,Value{true,48});frozen.setSourceAvailable(Source::Bms,true);frozen.onConnected();frozen.tick(0,coherent);
     frozen.setValue(3,Value{true,49});drain(frozen,coherent,0);assert(find(coherent,"SolarBatteryTelemetry/bms/voltage_v")->payload=="48");
-    coherent.sent.clear();drain(frozen,coherent,5000);assert(coherent.sent.size()==1&&coherent.sent[0].payload=="49");
+    assert(coherent.sent.back().payload=="49");
+    coherent.sent.clear();drain(frozen,coherent,5000);assert(coherent.sent.empty());
     // A partial delta keeps accepted fields, even when another source restarts the cycle.
     Wire partDelta;Publisher accepted;
     accepted.setValue(3,Value{true,10});accepted.setValue(4,Value{true,20});accepted.setSourceAvailable(Source::Bms,true);

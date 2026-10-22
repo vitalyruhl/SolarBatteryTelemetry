@@ -34,6 +34,8 @@ struct RecordingRuntime {
     std::vector<RecordedField> fields;
     struct Control { std::string group, key; std::function<bool()> getter; std::function<void(bool)> setter; };
     std::vector<Control> controls;
+    std::vector<std::function<void()>> buttons;
+    void registerRuntimeButton(const char*, const char*, std::function<void()> press) { buttons.push_back(press); }
     void registerRuntimeCheckbox(const char* source, const char* key, std::function<bool()> get, std::function<void(bool)> set) {
         controls.push_back({source, key, get, set});
     }
@@ -71,7 +73,7 @@ int main() {
     RecordingRuntime runtime;
     assert(sbt::metadata::registerSmokeFields(runtime));
     assert(sbt::metadata::registerTelemetryFields(runtime));
-    assert(runtime.fields.size() == 52 && runtime.attempts == 52);
+    assert(runtime.fields.size() == 56 && runtime.attempts == 56);
     std::map<RuntimeFieldKind, unsigned> counts;
     std::set<std::pair<std::string, std::string>> identities;
     std::set<std::string> connectivityKeys;
@@ -86,13 +88,14 @@ int main() {
             assert(field.base.card == "Connectivity");
             assert(connectivityKeys.emplace(field.base.key.c_str()).second);
         }
-        assert(field.kind != RuntimeFieldKind::Button);
+
     }
     assert(counts[RuntimeFieldKind::Float] == 18);
     assert(counts[RuntimeFieldKind::Int] == 10);
-    assert(counts[RuntimeFieldKind::Bool] == 9);
-    assert(counts[RuntimeFieldKind::Text] == 13);
+    assert(counts[RuntimeFieldKind::Bool] == 12);
+    assert(counts[RuntimeFieldKind::Text] == 14);
     assert(counts[RuntimeFieldKind::Checkbox] == 2);
+    assert(counts[RuntimeFieldKind::Button] == 0);
     for (const auto& absent : {std::pair<const char*, const char*>{"telemetry", "root"}, {"telemetry", "rootValidation"}, {"telemetry", "ota"},
             {"bms", "availability"}, {"victron", "availability"}, {"bms", "cell_count"}, {"bms", "temperature_sensor_count"},
             {"victron", "pv_voltage_v"}, {"victron", "pv_current_a"}, {"victron", "battery_power_w"}})
@@ -101,8 +104,10 @@ int main() {
         expectKind(runtime, source, "reason", RuntimeFieldKind::Text);
         assert(find(runtime, source, "reason").base.label == "Source");
     }
-    expectKind(runtime, "bms", "charge_enabled", RuntimeFieldKind::Checkbox);
-    expectKind(runtime, "bms", "discharge_enabled", RuntimeFieldKind::Checkbox);
+    expectKind(runtime, "bms", "charge_enabled", RuntimeFieldKind::Bool);
+    expectKind(runtime, "bms", "requested_charge_enabled", RuntimeFieldKind::Checkbox);
+    expectKind(runtime, "bms", "discharge_enabled", RuntimeFieldKind::Bool);
+    expectKind(runtime, "bms", "requested_discharge_enabled", RuntimeFieldKind::Checkbox);
     expectKind(runtime, "bluetooth", "enabled", RuntimeFieldKind::Bool);
     assert(find(runtime, "bluetooth", "enabled").base.label == "Bluetooth enabled");
     expectKind(runtime, "telemetry", "mqttEnabled", RuntimeFieldKind::Text);
@@ -125,7 +130,7 @@ int main() {
         }
     }
     for (const auto& entry : {std::pair<bool (*)(RecordingRuntime&), unsigned>{&sbt::metadata::registerSmokeFields<RecordingRuntime>, 11},
-                             {&sbt::metadata::registerTelemetryFields<RecordingRuntime>, 39}}) {
+                             {&sbt::metadata::registerTelemetryFields<RecordingRuntime>, 45}}) {
         for (const unsigned failAt : {0u, entry.second / 2, entry.second - 1}) {
             RecordingRuntime failing;
             failing.failAfter = static_cast<int>(failAt);
@@ -136,29 +141,29 @@ int main() {
     // [MOCKED!] Only runtime callback storage and observed samples; mailbox admission is real.
     bool observed[] = {true, false};
     bms::MosMailbox mailbox;
-    bool enabled = false, fresh = false;
+    bool enabled = false, fresh = false;uint32_t callbackNow=100;
     bms::MosRequest submitted{};
     const char* admission = "none";
     sbt::metadata::registerBmsCheckboxes(runtime, [&](unsigned i, bool state) {
             submitted.target = i == 0 ? bms::MosTarget::Charge : bms::MosTarget::Discharge;
-            submitted.state = state; submitted.deadline = 30100;
+            submitted.state = state; submitted.deadline = callbackNow+30000;
             std::snprintf(submitted.id, sizeof(submitted.id), "ui-fixture");
-            admission = mailbox.offer(submitted, 100, enabled, fresh, false);
+            admission = mailbox.offer(submitted, callbackNow, enabled, fresh, false);
         });
     assert(runtime.controls.size() == 2);
-    assert(runtime.controls[0].group == "bms" && runtime.controls[0].key == "charge_enabled");
-    assert(runtime.controls[1].group == "bms" && runtime.controls[1].key == "discharge_enabled");
+    assert(runtime.controls[0].group == "bms" && runtime.controls[0].key == "requested_charge_enabled");
+    assert(runtime.controls[1].group == "bms" && runtime.controls[1].key == "requested_discharge_enabled");
     assert(!runtime.controls[0].getter && !runtime.controls[1].getter);
     // Real CM control merge must preserve provider-owned nullable observed states.
     JsonDocument document;
     JsonObject root = document.to<JsonObject>();
     for (const int state : {1, 0, -1}) {
-        for (const char* key : {"charge_enabled", "discharge_enabled"}) {
+        for (const char* key : {"requested_charge_enabled", "requested_discharge_enabled"}) {
             if (state < 0) root["bms"][key] = nullptr;
             else root["bms"][key] = state != 0;
         }
         cm::fillRuntimeControls(root, runtime.controls);
-        for (const char* key : {"charge_enabled", "discharge_enabled"}) {
+        for (const char* key : {"requested_charge_enabled", "requested_discharge_enabled"}) {
             if (state < 0) assert(root["bms"][key].isNull());
             else assert(root["bms"][key].is<bool>() && root["bms"][key].as<bool>() == (state != 0));
         }
@@ -176,10 +181,14 @@ int main() {
         assert(std::string(admission) == "accepted" && mailbox.pending());
         bms::MosRequest queued; assert(mailbox.take(queued));
         assert(queued.target == (i == 0 ? bms::MosTarget::Charge : bms::MosTarget::Discharge));
-        assert(queued.state == requested && queued.deadline == 30100 && std::string(queued.id) == "ui-fixture");
-        mailbox.settle(false);
+        assert(queued.state == requested && queued.deadline == callbackNow+30000 && std::string(queued.id) == "ui-fixture");
+        mailbox.settle(false,callbackNow);callbackNow+=500;
         assert(observed[0] && !observed[1]);
     }
 
-    std::puts("[MOCKED!] Runtime sink contract passed: 52 compact fields, connectivity routing and two MOS checkboxes");
+    unsigned pairMask=99;
+    sbt::metadata::registerBmsPairButtons(runtime, [&](unsigned mask) { pairMask=mask; });
+    assert(runtime.buttons.size()==4);
+    for(unsigned mask=0;mask<4;++mask){runtime.buttons[mask]();assert(pairMask==mask);}
+    std::puts("[MOCKED!] Runtime metadata and actual MOS controls passed");
 }

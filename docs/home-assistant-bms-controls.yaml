@@ -1,4 +1,4 @@
-# Merge these lists into existing MQTT YAML; do not create duplicate mqtt/sensor/switch keys.
+# Merge these lists into existing MQTT YAML; do not create duplicate mqtt/sensor/switch/button keys.
 # Replace the base topic and device identifiers for another installation.
 # Existing MOS feedback binary sensors and numeric telemetry entities are preserved.
 # Set suggested_display_precision: 2 on existing voltage sensors separately.
@@ -20,7 +20,7 @@ sensor:
       name: SBT BMS
       manufacturer: SolarBatteryTelemetry
     value_template: '{{ value_json }}'
-    unit_of_measurement: '°C'
+    unit_of_measurement: 'Â°C'
     device_class: temperature
     state_class: measurement
     suggested_display_precision: 2
@@ -126,7 +126,7 @@ sensor:
       identifiers: [sbt_8857218f664c_bms]
       name: SBT BMS
       manufacturer: SolarBatteryTelemetry
-    value_template: '{{ value_json.reason }}'
+    value_template: "{{ 'not_ready' if value_json.reason == 'unavailable' else value_json.reason }}"
     json_attributes_topic: SolarBatteryTelemetry/bms/control
     entity_category: diagnostic
   - name: SBT BMS Command result
@@ -142,9 +142,10 @@ sensor:
       identifiers: [sbt_8857218f664c_bms]
       name: SBT BMS
       manufacturer: SolarBatteryTelemetry
-    value_template: '{{ value_json.phase }}: {{ value_json.reason }}'
+    value_template: "{{ (value_json.phase ~ ': ' ~ value_json.reason) if value_json.session | default('') != '' and value_json.session == state_attr('sensor.sbt_bms_control', 'session') else 'idle: no_request' }}"
     json_attributes_topic: SolarBatteryTelemetry/bms/control/result
     entity_category: diagnostic
+
 
 switch:
   - name: SBT BMS Charge MOS permission
@@ -154,7 +155,7 @@ switch:
     state_topic: SolarBatteryTelemetry/bms/charge_enabled
     payload_on: 'true'
     payload_off: 'false'
-    value_template: "{{ 'None' if value == 'null' else value }}"
+    value_template: "{{ 'true' if value_json else 'false' }}"
     command_template: >-
       {{ {'state': value == 'true',
           'request_id': 'ha_charge_' ~ ((as_timestamp(now()) * 1000000) | int),
@@ -171,8 +172,8 @@ switch:
       - topic: SolarBatteryTelemetry/bms/availability
         payload_available: available
         payload_not_available: unavailable
-      - topic: SolarBatteryTelemetry/bms/control/availability
-        value_template: "{{ 'available' if value == 'available' else 'unavailable' }}"
+      - topic: SolarBatteryTelemetry/bms/control
+        value_template: "{{ 'available' if value_json.permissions_known | default(false) and value_json.session | default('') != '' else 'unavailable' }}"
         payload_available: available
         payload_not_available: unavailable
     device:
@@ -187,7 +188,7 @@ switch:
     state_topic: SolarBatteryTelemetry/bms/discharge_enabled
     payload_on: 'true'
     payload_off: 'false'
-    value_template: "{{ 'None' if value == 'null' else value }}"
+    value_template: "{{ 'true' if value_json else 'false' }}"
     command_template: >-
       {{ {'state': value == 'true',
           'request_id': 'ha_discharge_' ~ ((as_timestamp(now()) * 1000000) | int),
@@ -204,8 +205,8 @@ switch:
       - topic: SolarBatteryTelemetry/bms/availability
         payload_available: available
         payload_not_available: unavailable
-      - topic: SolarBatteryTelemetry/bms/control/availability
-        value_template: "{{ 'available' if value == 'available' else 'unavailable' }}"
+      - topic: SolarBatteryTelemetry/bms/control
+        value_template: "{{ 'available' if value_json.permissions_known | default(false) and value_json.session | default('') != '' else 'unavailable' }}"
         payload_available: available
         payload_not_available: unavailable
     device:

@@ -66,6 +66,10 @@ template<class Runtime> bool registerTelemetryFields(Runtime& runtime) {
             telemetryField<RuntimeTextMeta>(runtime, "bms", key, key, 50, "bms");
         if (!registered) return false;
     }
+    if (!telemetryField<RuntimeBoolMeta>(runtime,"bms","permissions_known","Actual MOS states available",51,"bms") ||
+        !telemetryField<RuntimeTextMeta>(runtime,"bms","mos_readback","MOS readback",52,"bms") ||
+        !telemetryField<RuntimeCheckboxMeta>(runtime,"bms","requested_charge_enabled","Allow charging (actual MOS)",53,"bms") ||
+        !telemetryField<RuntimeCheckboxMeta>(runtime,"bms","requested_discharge_enabled","Allow discharging (actual MOS)",54,"bms")) return false;
     int order = 10;
     for (const auto& channel : telemetry::channels) {
         const char* source = telemetry::sourceName(channel.source);
@@ -73,9 +77,7 @@ template<class Runtime> bool registerTelemetryFields(Runtime& runtime) {
         bool registered = false;
         switch (channel.type) {
         case telemetry::FieldType::Boolean:
-            if (std::strcmp(key, "charge_enabled") == 0 || std::strcmp(key, "discharge_enabled") == 0)
-                registered = telemetryField<RuntimeCheckboxMeta>(runtime, source, key, channel.label, order, source);
-            else registered = telemetryField<RuntimeBoolMeta>(runtime, source, key, channel.label, order, source);
+            registered = telemetryField<RuntimeBoolMeta>(runtime, source, key, channel.label, order, source);
             break;
         case telemetry::FieldType::Real: {
             const bool cellVolts = std::strcmp(key, "cell_voltage_min_v") == 0 || std::strcmp(key, "cell_voltage_max_v") == 0 || std::strcmp(key, "cell_voltage_delta_v") == 0;
@@ -96,12 +98,17 @@ template<class Runtime> bool registerTelemetryFields(Runtime& runtime) {
     return true;
 }
 
-inline constexpr const char* bmsCheckboxKeys[] = {"charge_enabled", "discharge_enabled"};
-// The provider owns true/false/null; setters only request a guarded change.
+inline constexpr const char* bmsCheckboxKeys[] = {"requested_charge_enabled", "requested_discharge_enabled"};
+// The provider owns nullable acknowledged requests; setters only request a guarded change.
 template<class Runtime, class Request>
 void registerBmsCheckboxes(Runtime& runtime, Request request) {
     for (unsigned i = 0; i < 2; ++i)
         runtime.registerRuntimeCheckbox("bms", bmsCheckboxKeys[i], std::function<bool()>{},
             [request, i](bool state) { request(i, state); });
+}
+template<class Runtime, class Request>
+void registerBmsPairButtons(Runtime& runtime, Request request) {
+    for(unsigned mask=0;mask<4;++mask){char key[24];std::snprintf(key,sizeof(key),"set_permissions_%u",mask);
+        runtime.registerRuntimeButton("bms",key,[request,mask](){request(mask);});}
 }
 }

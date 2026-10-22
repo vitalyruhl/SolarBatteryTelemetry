@@ -1,12 +1,12 @@
 # SolarBatteryTelemetry
 
-Firmware **1.3.0** uses compact CM 4.7.1 runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
+Firmware **1.4.5** uses compact CM runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
 
 ## Current integration work
 
 The [single SIL/SBT/HA integration plan](../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) and [integration specification](../SolarInverterLimiter/docs/control-planning/2026-10-20-integration-spec.md) are the current cross-repository entry points. SBT keeps collector responsibilities; SIL owns control policy. Older SBT plans now live under `docs/acceptance/` as historical evidence and do not create a second execution queue.
 
-The collector changes are implemented on the existing work branch. Firmware 1.3.0 adds configurable BMS telemetry tolerance and MQTT full refresh; focused host tests and the USB build pass. Device acceptance for this candidate is pending. The canonical plan remains the cross-repository execution record; historical acceptance documents do not authorize new device actions.
+The collector changes are implemented on the existing work branch. Firmware 1.4.0 adds retained Victron error/yield readings and separately timestamped display history. This candidate has not been uploaded; validation is recorded with the change. The canonical plan remains the cross-repository execution record; historical acceptance documents do not authorize new device actions.
 
 Historical readout acceptance: the collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
 
@@ -25,7 +25,7 @@ See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout]
 
 ## Local ConfigManager dependency
 
-The active ignored `platformio.local.ini` binding selects the adjacent **ConfigManager 4.7.1** development checkout through an absolute local dependency. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md). No registry release or dependency publication is implied.
+The active ignored `platformio.local.ini` binding selects the adjacent **ConfigManager 4.8.0** development checkout through an absolute local dependency. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md). No registry release or dependency publication is implied.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
@@ -42,7 +42,7 @@ python tools/test/run-settings-registration-tests.py
 pio run -e usb
 ```
 
-The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current candidate is 1.3.0. Known upstream deprecation/LTO warnings remain.
+The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current candidate is 1.4.0. Known upstream deprecation/LTO warnings remain.
 
 Secrets, local build bindings, tooling state and detailed device captures are excluded from Git. Earlier smoke/preparation acceptance documents are retained as historical evidence.
 
@@ -128,3 +128,9 @@ retain flags, Victron freshness and all command deadlines are unchanged.
 
 Host/build validation and deployment acceptance are separate: this source change
 does not establish a repair of the underlying BLE interruptions or HTTP failures.
+
+## 1.4.0 changes
+
+Victron error code and daily yield are retained on their existing scalar MQTT topics. Separate retained `victron/last_valid/error_code` and `victron/last_valid/yield_today_wh` JSON topics preserve each last valid reading with its actual reception time for display. Live source availability remains strict; display history is never a control input. See [MQTT display history](docs/MQTT.md#140-victron-display-history) for clock and date handling.
+
+HA Allow controls now follow actual MOS readback and use fresh, explicit commands after a restart. The common ESP/HA control gate is persistent and blocks all external MOS writes, including SIL emergency requests, when off. See [the current control contract](docs/BMS.md#guarded-mos-permissions), [MQTT examples](docs/home-assistant-bms-controls.yaml) and [gate template](docs/home-assistant-bms-gate.yaml).

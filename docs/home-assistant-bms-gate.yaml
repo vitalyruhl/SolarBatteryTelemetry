@@ -1,0 +1,33 @@
+# Merge this item into the existing template integration, separately from MQTT YAML.
+# The ESP setting is authoritative; status updates never send a command.
+- switch:
+    - name: SBT BMS Control Enabled
+      unique_id: sbt_bms_control_enabled
+      default_entity_id: switch.sbt_bms_control_enabled
+      icon: mdi:shield-lock-open
+      availability: >-
+        {{ has_value('sensor.sbt_bms_control') and
+           state_attr('sensor.sbt_bms_control', 'enabled') is boolean }}
+      state: "{{ state_attr('sensor.sbt_bms_control', 'enabled') }}"
+      turn_on:
+        - action: mqtt.publish
+          data:
+            topic: SolarBatteryTelemetry/bms/control_enabled/set
+            qos: 0
+            retain: false
+            payload: >-
+              {{ {'state': true,
+                  'request_id': 'ha_gate_' ~ ((as_timestamp(now()) * 1000000) | int),
+                  'session': state_attr('sensor.sbt_bms_control', 'session') or '',
+                  'expires_at': (as_timestamp(now()) | int) + 30} | to_json }}
+      turn_off:
+        - action: mqtt.publish
+          data:
+            topic: SolarBatteryTelemetry/bms/control_enabled/set
+            qos: 0
+            retain: false
+            payload: >-
+              {{ {'state': false,
+                  'request_id': 'ha_gate_' ~ ((as_timestamp(now()) * 1000000) | int),
+                  'session': state_attr('sensor.sbt_bms_control', 'session') or '',
+                  'expires_at': (as_timestamp(now()) | int) + 30} | to_json }}
