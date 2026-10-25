@@ -6,7 +6,7 @@ MQTT Settings construction are copied verbatim from the configured local CM.
 No firmware or credentials are printed, and no hardware operation is performed.
 """
 from __future__ import annotations
-import configparser
+import json
 import os
 from pathlib import Path
 import re
@@ -15,6 +15,16 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
+
+def registry_cm_path() -> Path:
+    supplied = None
+    if '--config-manager-path' in sys.argv:
+        supplied = sys.argv[sys.argv.index('--config-manager-path') + 1]
+    cm = Path(supplied) if supplied else ROOT / '.pio/registry-settings/libdeps/usb/ESP32 Configuration Manager'
+    metadata = json.loads((cm / 'library.json').read_text(encoding='utf-8-sig'))
+    if metadata.get('name') != 'ESP32 Configuration Manager' or metadata.get('version') != '4.9.0':
+        raise RuntimeError('Host validation requires the published CM 4.9.0 package')
+    return cm
 
 
 def between(source: str, start: str, end: str) -> str:
@@ -43,12 +53,7 @@ def method(source: str, signature: str) -> str:
 
 
 def main() -> None:
-    ini = configparser.ConfigParser(interpolation=None)
-    ini.read(ROOT / "platformio.local.ini", encoding="utf-8-sig")
-    configured = ini.get("env", "custom_cm_path", fallback="").strip()
-    cm = Path(configured)
-    if not configured or not cm.is_absolute() or not (cm / "src/ConfigManager.h").is_file():
-        raise RuntimeError("A valid explicit custom_cm_path is required")
+    cm = registry_cm_path()
     source = (cm / "src/ConfigManager.h").read_text(encoding="utf-8-sig")
     mqtt = (cm / "src/mqtt/MQTTManager.h").read_text(encoding="utf-8-sig")
     legacy_only = "--legacy-only" in sys.argv[1:]
@@ -98,13 +103,16 @@ def main() -> None:
         for name in ("Arduino.h", "Preferences.h"):
             (out / name).write_text('#pragma once\n#include "cm_platform_adapter.h"\n', encoding="utf-8")
         executable = out / "settings_registration_test.exe"
-        command = [str(compiler), "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-deprecated-declarations", "-Wno-reorder-ctor", "-Wno-unused-parameter",
+        command = [str(compiler), "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-deprecated-declarations", "-Wno-reorder-ctor", "-Wno-unused-parameter", "-DCM_ENABLE_SETTINGS_UI=1", "-DCM_ENABLE_LIVE_UI=0",
                    "-I", str(out), "-I", str(ROOT / "test/host"), "-I", str(ROOT / "src"), "-I", str(json_include),
                    str(ROOT / "test/host/settings_registration_test.cpp"), "-o", str(executable)]
         if legacy_only:
             command.insert(1, "-DSBT_CM_LEGACY_ONLY")
+        isolated_only = '--isolated-only' in sys.argv
+        if isolated_only:
+            command.insert(1, '-DSBT_ISOLATED_TEST_PROFILE=1')
         subprocess.run(command, check=True)
-        scenarios = ("legacy_failure",) if legacy_only else ("legacy_failure", "defaults", "migration", "new_wins", "migration_failure", "ota_missing", "ota_empty", "readout_enable_once", "refresh_handoff")
+        scenarios = ("isolated_namespace",) if isolated_only else ("legacy_failure",) if legacy_only else ("legacy_failure", "defaults", "migration", "new_wins", "migration_failure", "ota_missing", "ota_empty", "readout_enable_once", "refresh_handoff")
         for scenario in scenarios:
             subprocess.run([str(executable), scenario], check=True)
     print(f"Settings regression: {len(scenarios)} real-CM scenarios passed; temporary artifacts removed")

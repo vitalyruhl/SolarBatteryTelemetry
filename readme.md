@@ -1,12 +1,12 @@
 # SolarBatteryTelemetry
 
-Firmware **1.4.5** uses compact CM runtime metadata and reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Live pages combine Bluetooth/MQTT under Connectivity and retain BMS and Victron. Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only.
+Installed firmware **1.4.6** uses published ConfigManager **4.9.0** with **Settings enabled and Live disabled**. It reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only. This build change does not establish a fix for the historical panic or HTTP-delivery issue.
 
 ## Current integration work
 
 The [single SIL/SBT/HA integration plan](../SolarInverterLimiter/docs/superpowers/plans/2026-10-20-sil-sbt-ha-integration.md) and [integration specification](../SolarInverterLimiter/docs/control-planning/2026-10-20-integration-spec.md) are the current cross-repository entry points. SBT keeps collector responsibilities; SIL owns control policy. Older SBT plans now live under `docs/acceptance/` as historical evidence and do not create a second execution queue.
 
-Firmware 1.4.5 is installed and the owner accepted normal daily operation. It includes retained Victron error/yield readings, separately timestamped display history, actual MOS feedback and the shared persistent control gate. The [current acceptance record](docs/acceptance/2026-10-22-mos-software-request.md#145-actual-state-contract-acceptance) describes the bounded checks; the historical SBT panic/HTTP delivery issue remains unresolved. The canonical plan remains the cross-repository execution record; historical acceptance documents do not authorize new device actions.
+Firmware 1.4.6 was installed on 2026-10-25 after an isolated three-minute COM8 check. Production identity, version, Settings-only capabilities, inactive OTA and all 32 exposed settings were verified after the authenticated upload; masked secrets permit comparison of their exposed masks only. Fresh production BMS and Victron sequences were subsequently observed. The [rollout record](docs/acceptance/2026-10-22-mos-software-request.md#146-settings-only-registry-rollout) records hashes, bounded checks and open limits. The earlier 1.4.5 actual-state contract remains unchanged. The historical SBT panic/HTTP delivery issue and CM 4.9.0 synchronous MQTT risks remain unresolved; this is not long-run acceptance. The canonical plan remains the cross-repository execution record; historical acceptance documents do not authorize new device actions.
 
 Historical readout acceptance: the collector in the shed returned fresh BMS and Victron data simultaneously after the latest OTA installation. Ten observations over 95.6 seconds showed both sources available, MQTT online, continuous uptime and no additional reconnects. The owner subsequently confirmed incoming data. This is bounded acceptance, not a long-duration stability claim. The OTA sender missed its final acknowledgment even though the new firmware booted; see [BMS acceptance](docs/BMS.md).
 
@@ -23,9 +23,11 @@ Local credentials stay in ignored `src/secret/secrets.h`; only placeholders are 
 
 See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout](docs/Victron.md) and [project evidence](project.info.md). Unsupported or stale values stay unavailable rather than becoming fabricated zero measurements.
 
-## Local ConfigManager dependency
+## Published ConfigManager dependency
 
-Integration was also built against a reviewed **ConfigManager 4.8.0** development snapshot. The ignored `platformio.local.ini` binding selects an absolute local development checkout; its current version must be verified separately. SBT now requires CM >=4.7.0 for its compact metadata API. This includes the existing shared BLE transport. Reproducing the build requires the compact implementation and coherent header/WebUI assets, not just the same version string; see the [compact migration handoff](docs/acceptance/2026-10-18-compact-runtime-metadata-evidence.md). No registry release or dependency publication is implied.
+The consumer pins `vitaly.ruhl/ESP32 Configuration Manager@4.9.0` from the PlatformIO Registry. Local CM source/symlink overrides are rejected. The precompile check validates registry owner/version, coherent mirrors and the generated Settings-only asset proof. The package's official generator creates derived WebUI assets only inside the consumer-local dependency directory; it does not use the unpublished sibling checkout or change PlatformIO's shared cache.
+
+Both production profiles explicitly set `CM_ENABLE_LIVE_UI=0` and `CM_ENABLE_SETTINGS_UI=1`. Application metadata registration treats CM's disabled Live API as an intentional no-op, so disabling Live cannot abort BLE/MQTT initialization. Network credentials and OTA defaults remain in ignored local files. Remove obsolete `custom_cm_path` and CM `symlink://` entries from private overrides; preserve their other settings. Build outputs and dependencies are isolated under `.pio/registry-settings`.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
@@ -40,9 +42,16 @@ python tools/test/run-settings-registration-tests.py
 ./tools/test/run-jbd-host-tests.ps1
 ./tools/test/run-bms-command-tests.ps1
 pio run -e usb
+pio run -e ota
 ```
 
-The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0; the current candidate is 1.4.0. Known upstream deprecation/LTO warnings remain.
+## Isolated COM8 profile
+
+`pio run -e testesp` builds a separate diagnostic artifact at `.pio/registry-settings/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
+
+The profile reports absent peers as unavailable. It qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. ConfigManager 4.9.0 still has synchronous MQTT transport paths; the unpublished 4.9.1 bounded-transport changes are deliberately excluded. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
+
+The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0 and predates the current 1.4.6 rollout. Known upstream deprecation/LTO warnings remain.
 
 Secrets, local build bindings, tooling state and detailed device captures are excluded from Git. Earlier smoke/preparation acceptance documents are retained as historical evidence.
 

@@ -5,12 +5,7 @@ ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location("settings_harness",Path(__file__).with_name("run-settings-registration-tests.py"))
 helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
 def main():
- ini=configparser.ConfigParser(interpolation=None)
- ini.read(ROOT/"platformio.local.ini",encoding="utf-8-sig")
- configured=ini.get("env","custom_cm_path",fallback="").strip()
- cm=Path(configured)
- if not configured or not cm.is_absolute() or not (cm/"src/ConfigManager.h").is_file():
-  raise RuntimeError("A valid explicit custom_cm_path is required")
+ cm=helper.registry_cm_path()
  source=(cm/"src/ConfigManager.h").read_text(encoding="utf-8-sig")
  parts=['#pragma once\n#include "bms_readout_platform.h"\n#define CM_ENABLE_LOGGING 0\n#define CM_ENABLE_VERBOSE_LOGGING 0\n#define CM_CORE_LOG(...) do {} while(0)\n']
  for start,end in [('template <typename T>\nstruct ConfigOptions','class ConfigManagerClass;'),('enum class SettingType','using LogCallback'),('inline String generateKeyFromNameAndCategory','struct ConfigRequestContext'),('class BaseSetting {','// Config<T> template class'),('template <typename T>\nclass Config : public BaseSetting','// Visibility helper factories')]:parts.append(helper.between(source,start,end))
@@ -38,8 +33,15 @@ def main():
   exe=out/'bms_readout_test.exe'
   command=[compiler,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-reorder-ctor','-Wno-unused-parameter']
   for include in [out,ROOT/'test/host',ROOT/'src',ROOT/'src/bms',json]:command+=['-I',str(include)]
+  arguments=sys.argv[1:]
+  if '--config-manager-path' in arguments:
+   at=arguments.index('--config-manager-path');arguments=arguments[:at]+arguments[at+2:]
+  if '--isolated-only' in arguments:
+   subprocess.run(command+['-DSBT_ISOLATED_TEST_PROFILE=1',str(ROOT/'test/host/bms_isolated_profile_test.cpp'),'-o',str(exe)],check=True)
+   subprocess.run([str(exe)],check=True)
+   return
   subprocess.run(command+[str(ROOT/'test/host/bms_readout_test.cpp'),'-o',str(exe)],check=True)
-  scenarios=sys.argv[1:] or ["gate_buffered_setting","gate_buffered_mqtt","gate_settings","gate_fence","emergency_alarm","emergency_clear","emergency_disabled","emergency_software","cached_manual","disconnect","reconnect","query_timeout","completion_error","invalid_response","generation","write_error","short_timeout","long_timeout","rollover","ota","mac_change","mac_empty","master_disable","control_age","partial_pair","settings","historical_settings","short_control","queue_short","queue_pause","queue_stale","command_settling"]
+  scenarios=arguments or ["gate_buffered_setting","gate_buffered_mqtt","gate_settings","gate_fence","emergency_alarm","emergency_clear","emergency_disabled","emergency_software","cached_manual","disconnect","reconnect","query_timeout","completion_error","invalid_response","generation","write_error","short_timeout","long_timeout","rollover","ota","mac_change","mac_empty","master_disable","control_age","partial_pair","settings","historical_settings","short_control","queue_short","queue_pause","queue_stale","command_settling"]
   for scenario in scenarios:subprocess.run([str(exe),scenario],check=True)
  print('BMS readout behavioral tests passed; temporary artifacts removed')
 if __name__=='__main__':main()
