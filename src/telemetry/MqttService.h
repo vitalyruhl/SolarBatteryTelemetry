@@ -63,7 +63,13 @@ class MqttService final : public Transport {
  std::atomic<bool> otaPaused_{false};
  struct View {uint32_t fullRefreshMs=60000;char root[rootLimit+1]="SolarBatteryTelemetry";bool enabled=false,connected=false,rejected=false,delivered=false,cleanupPending=false,oldEndpointUnconfirmed=false;int state=0;};
  std::mutex viewMutex_;View view_;
- void captureText(TextField field,const String& value){mailbox_.text(field,value.c_str(),value.length());}
+ void captureText(TextField field,const String& value){
+  if constexpr(sbt::testprofile::isolated){
+   if(field==TextField::Root){mailbox_.text(field,sbt::testprofile::root,std::strlen(sbt::testprofile::root));return;}
+   if(field==TextField::ClientId){mailbox_.text(field,sbt::testprofile::client,std::strlen(sbt::testprofile::client));return;}
+  }
+  mailbox_.text(field,value.c_str(),value.length());
+ }
  void captureInitial() {
   mailbox_.enabled(ui_->enableMQTT.get());captureText(TextField::Server,ui_->server.get());mailbox_.port(ui_->port.get());
   captureText(TextField::Username,ui_->username.get());captureText(TextField::Password,ui_->password.get());
@@ -128,7 +134,10 @@ public:
  }
  // Called once after loadAll and before server/tasks. Config::load intentionally omits callbacks.
  void bindBms(bms::Readout& readout){bms_=&readout;}
- void afterLoad(){captureInitial();}
+ void afterLoad(){
+  if constexpr(sbt::testprofile::isolated){ui_->publishTopicBase.set(sbt::testprofile::root);ui_->clientId.set(sbt::testprofile::client);}
+  captureInitial();
+ }
  void pauseForOta(bool value){otaPaused_.store(value);}
  void updateBms(const Value* values,bool available,const char* reason,uint32_t receivedAt,uint32_t sequence,uint32_t now){
   health(0,available,reason,receivedAt,sequence,now);
@@ -172,10 +181,11 @@ public:
  }
  bool connected() const override{return mqtt_.isConnected();}
  bool publish(const char* topic,const char* payload,bool retained) override {
-  return !otaPaused_.load()&&std::strlen(topic)<=topicLimit&&std::strlen(payload)<=payloadLimit&&mqtt_.publishRaw(topic,payload,retained);
+  return sbt::testprofile::topicAllowed(topic)&&!otaPaused_.load()&&std::strlen(topic)<=topicLimit&&std::strlen(payload)<=payloadLimit&&mqtt_.publishRaw(topic,payload,retained);
  }
  void disconnect() override{session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();mqtt_.disconnect();}
  void configure(const char* root) override{
+  root=sbt::testprofile::mqttRoot(root);
   char will[topicLimit+1];if(!buildTopic(root,"status",will,sizeof(will)))return;
   mqtt_.settings().publishTopicBase.set(String(root));mqtt_.setLastWill(will,"offline",true,0);
   if(desired_.enabled&&desired_.server[0])mqtt_.begin();

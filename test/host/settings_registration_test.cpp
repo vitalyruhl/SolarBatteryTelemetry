@@ -4,6 +4,7 @@
 #include "telemetry/MqttUiSettings.h"
 #include "settings/SettingsPersistence.h"
 #include "telemetry/MqttConfigMailbox.h"
+#include "smoke/IsolatedTestProfile.h"
 #endif
 #include <cassert>
 #include <cstdio>
@@ -48,6 +49,21 @@ static void legacyFailure() {
 }
 
 #ifndef SBT_CM_LEGACY_ONLY
+static void isolatedNamespace() {
+    assert(sbt::testprofile::isolated);
+    telemetry::ServiceSettingsHarness service;
+    service.installCallbacks();service.captureInitial();
+    uint32_t seen=0;telemetry::MqttConfig next;
+    assert(service.mailbox_.take(seen,next));
+    assert(std::strcmp(next.root,"SBTTest/COM8")==0);
+    assert(std::strcmp(next.clientId,"SBTTest-COM8-collector")==0);
+    service.ui_->publishTopicBase.set("homeassistant");
+    service.ui_->clientId.set("SolarBatteryTelemetry");
+    assert(service.mailbox_.take(seen,next));
+    assert(std::strcmp(next.root,"SBTTest/COM8")==0);
+    assert(std::strcmp(next.clientId,"SBTTest-COM8-collector")==0);
+    std::puts("isolated_namespace: actual service callbacks fence persisted and later UI namespace changes");
+}
 static void defaults() {
     // Actual canonical Settings must coexist with SBT UI settings without collisions.
     cm::MQTTManager::Settings transport;
@@ -246,6 +262,7 @@ int main(int argc, char** argv) {
     else if(scenario == "ota_empty") otaEmpty();
     else if(scenario == "readout_enable_once") readoutEnableOnce();
     else if(scenario == "refresh_handoff") refreshHandoff();
+    else if(scenario == "isolated_namespace") isolatedNamespace();
 #endif
     else assert(false && "Unknown scenario");
 }

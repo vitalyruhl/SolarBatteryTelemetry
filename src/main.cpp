@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "settings.h"
 #include "smoke/SmokePolicy.h"
+#include "smoke/IsolatedTestProfile.h"
 #include "telemetry/MqttService.h"
 #include "victron/VictronReadout.h"
 #include "bms/BmsReadout.h"
@@ -34,6 +35,21 @@ static void printHealth(const char* stage);
 static void logNetworkIpInfo(const char *context);
 static void applyAccessPointMacPriority();
 static bool isValidMacAddress(const String &value);
+
+static bool applyIsolatedTestSettings() {
+    if constexpr(!sbt::testprofile::isolated) return true;
+    for(const auto& key : {std::pair<const char*,const char*>{"BMS","BmsReadMac"},
+                          {"Victron","VictronReadMac"},{"Victron","VictronReadKey"}}) {
+        auto* setting=ConfigManager.findSettingByKeyHint(key.first,key.second);
+        if(!setting||setting->getType()!=SettingType::STRING)return false;
+        static_cast<Config<String>*>(setting)->set("");
+    }
+    auto* gate=ConfigManager.findSettingByKeyHint("BMS","BmsControl");
+    if(!gate||gate->getType()!=SettingType::BOOL)return false;
+    static_cast<Config<bool>*>(gate)->set(false);
+    bluetooth.settings().enabled.set(true);
+    return true;
+}
 
 // Built-in LED pulse helper for WiFi status patterns.
 static cm::helpers::PulseOutput buildinLED(LED_BUILTIN, cm::helpers::PulseOutput::ActiveLevel::ActiveHigh);
@@ -101,8 +117,8 @@ static bool attachSmokeRuntime() {
 void setup() {
     setupLogging();
     SBT_INSTALL_HEAP_FAILURE_DIAGNOSTICS();
-    ConfigManager.setAppName(APP_NAME);
-    ConfigManager.setAppTitle(APP_NAME);
+    ConfigManager.setAppName(sbt::testprofile::isolated?"SolarBatteryTelemetry-Test":APP_NAME);
+    ConfigManager.setAppTitle(sbt::testprofile::isolated?"SolarBatteryTelemetry-Test":APP_NAME);
     ConfigManager.setVersion(APP_VERSION);
     ConfigManager.setSettingsPassword(SETTINGS_PASSWORD);
     // Keep the live dashboard focused on collector sources; serial health remains available.
@@ -126,6 +142,7 @@ void setup() {
             bluetooth.requestResume(cm::BlePauseReason::Ota);
     });
     ConfigManager.loadAll();
+    if(!applyIsolatedTestSettings()){lmg.logTag(LL::Error,"SETUP","Test isolation failed");return;}
     telemetryMqtt.afterLoad();
     victronReadout.afterLoad();
     bmsReadout.afterLoad();
@@ -135,6 +152,10 @@ void setup() {
     readoutPrefs.end();
     if(!readoutReady){lmg.logTag(LL::Error, "SETUP", "Readout initialization failed");return;}
     setupNetworkDefaults();
+    if constexpr(sbt::testprofile::isolated){
+        wifiSettings.useDhcp.set(true);
+        Serial.println("[I] [MOCKED!] SBTTest/COM8; peers empty; BMS control blocked; DHCP");
+    }
 
     // SmartSolar uses passive advertisements; JBD uses serialized telemetry and explicitly enabled MOS transactions.
     // Do not initialize NimBLE separately; the CM worker owns its first radio operation.

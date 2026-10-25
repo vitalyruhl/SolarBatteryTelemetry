@@ -10,6 +10,12 @@ template<class Meta, class Runtime>
 bool field(Runtime& runtime, const char* source, const char* key, const char* label,
            int order, const char* page, const char* card, const char* group,
            const char* unit = "", int precision = 2) {
+#if defined(CM_ENABLE_LIVE_UI) && !CM_ENABLE_LIVE_UI
+    // Disabled CM Live APIs intentionally return invalid IDs; Settings-only startup is valid.
+    (void)runtime; (void)source; (void)key; (void)label; (void)order;
+    (void)page; (void)card; (void)group; (void)unit; (void)precision;
+    return true;
+#else
     Meta meta;
     meta.base.sourceGroup = source;
     meta.base.key = key;
@@ -21,6 +27,7 @@ bool field(Runtime& runtime, const char* source, const char* key, const char* la
     if constexpr (std::is_same_v<Meta, RuntimeFloatMeta> || std::is_same_v<Meta, RuntimeIntMeta>) meta.unit = unit;
     if constexpr (std::is_same_v<Meta, RuntimeFloatMeta>) meta.precision = precision;
     return static_cast<bool>(runtime.addRuntimeMeta(meta));
+#endif
 }
 
 template<class Meta, class Runtime>

@@ -1,6 +1,7 @@
 #pragma once
 #include "BmsCommandPolicy.h"
 #include "BmsGateMailbox.h"
+#include "smoke/IsolatedTestProfile.h"
 #include "runtime/AppRuntimeMetadata.h"
 #include <atomic>
 #include "victron/VictronReadout.h"
@@ -76,7 +77,7 @@ public:
   manager.addToSettingsGroup(controlEnabled_.getKey(),"Bluetooth","BMS","Readout",2);
   manager.addToSettingsGroup(dataTimeoutSec_.getKey(),"Bluetooth","BMS","Readout",3);
   dataTimeoutSec_.setCallback([this](int value){dataTimeoutMs_.store(timeoutMilliseconds(value));});
-  controlEnabled_.setCallback([this](bool value){std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(value);if(!value){cancelRequested_.store(true);if(bluetooth_)bluetooth_->cancelPendingCommands();}});
+  controlEnabled_.setCallback([this](bool value){std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(sbt::testprofile::controlAllowed(value));if(!enabled_.load()){cancelRequested_.store(true);if(bluetooth_)bluetooth_->cancelPendingCommands();}});
   mac_.setCallback([this](const String& text){mailbox_.setMac(text.c_str(),text.length());});
   bluetooth_=&bluetooth;
   manager.getRuntime().addRuntimeProvider("bms",[this](JsonObject& data){
@@ -101,7 +102,7 @@ public:
   });
   attached_=true;return true;
  }
- void afterLoad(){dataTimeoutMs_.store(timeoutMilliseconds(dataTimeoutSec_.get()));enabled_.store(controlEnabled_.get());mailbox_.setMac(mac_.get().c_str(),mac_.get().length());loop(millis());}
+ void afterLoad(){dataTimeoutMs_.store(timeoutMilliseconds(dataTimeoutSec_.get()));enabled_.store(sbt::testprofile::controlAllowed(controlEnabled_.get()));mailbox_.setMac(mac_.get().c_str(),mac_.get().length());loop(millis());}
  void onEvent(const cm::BleEvent& event){
   if(!active_.macValid||std::strcmp(event.peer.text,active_.mac)!=0)return;
   const uint32_t now=millis();
@@ -144,7 +145,7 @@ public:
    const bool saved=!expired&&controlEnabled_.save(gate.state)&&!controlEnabled_.needsSave()&&controlEnabled_.get()==gate.state;
    if(!saved)controlEnabled_.set(previous);
    // Saving the same value may not invoke a setting callback; restore effective state explicitly.
-   {std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(controlEnabled_.get());}
+   {std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(sbt::testprofile::controlAllowed(controlEnabled_.get()));}
    commands_.settingResult(gate,saved?"applied":"rejected",saved?"setting_saved":expired?"expired":"setting_save_failed");
   }
   }
@@ -182,7 +183,7 @@ public:
     if(control)prepared=commands_.command(command,size);
     else {uint8_t read[7];prepared=readCommand(next_,read);std::memcpy(command,read,7);size=7;}
     bool admitted=false;
-    {std::lock_guard<std::mutex> io(gateIoMutex_);admitted=prepared&&(!control||enabled_.load())&&bluetooth_->writeCommand(command,size);}
+    {std::lock_guard<std::mutex> io(gateIoMutex_);admitted=prepared&&(!control||sbt::testprofile::controlAllowed(enabled_.load()))&&bluetooth_->writeCommand(command,size);}
     if(admitted){
      if(control&&commands_.expected()==0xe1)commands_.markWriteSent();
      parser_.reset();expected_=control?commands_.expected():next_;controlQuery_=control;waiting_=true;sentAt_=now;query_=0;
@@ -193,6 +194,7 @@ public:
  }
  bool queueRequest(const MosRequest& request){
   std::lock_guard<std::mutex> lock(mutex_);
+  if constexpr(sbt::testprofile::isolated){controlView_.admission="isolated_test";return false;}
   if(request.emergency&&(!view_.available||!view_.values[14].valid||(uint32_t(view_.values[14].number)&0x0fff)==0)){controlView_.admission="rejected_no_emergency";return false;}
   const auto now=millis();const bool fresh=view_.available&&uint32_t(now-view_.receivedAt)<std::min(dataTimeoutMs_.load(),uint32_t{30000})&&!bluetooth_->isPaused();
   const auto result=requests_.offer(request,now,enabled_.load(),fresh&&controlView_.ready,cancelRequested_.load());
@@ -200,6 +202,7 @@ public:
   return !std::strcmp(result,"accepted");
  }
  bool queueGate(const MosRequest& request){
+  if constexpr(sbt::testprofile::isolated)return false;
   std::lock_guard<std::recursive_mutex> transaction(gateTransaction_);
   if(request.target!=MosTarget::Gate||int32_t(millis()-request.deadline)>=0)return false;
   {std::lock_guard<std::mutex> lock(mutex_);gateRequests_.offer(request,millis());}
@@ -210,7 +213,7 @@ public:
  void cancelCommands(){
   std::lock_guard<std::recursive_mutex> transaction(gateTransaction_);
   {std::lock_guard<std::mutex> lock(mutex_);gateRequests_.cancel();}
-  {std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(controlEnabled_.get());}
+  {std::lock_guard<std::mutex> io(gateIoMutex_);enabled_.store(sbt::testprofile::controlAllowed(controlEnabled_.get()));}
   cancelRequested_.store(true);
  }
  ControlView control()const{std::lock_guard<std::mutex> lock(mutex_);return controlView_;}

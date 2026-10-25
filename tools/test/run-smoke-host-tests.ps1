@@ -16,3 +16,10 @@ foreach($case in @('telemetry_contract_test','victron_history_test','mqtt_mailbo
     & $exe
     if($LASTEXITCODE -ne 0){throw ($case+' assertions failed')}
 }
+foreach($profile in @(0,1)) {
+    $exe=Join-Path $outDir ('isolated_namespace_'+$profile+'.exe')
+    & 'C:/Program Files/LLVM/bin/clang++.exe' -std=c++17 -Wall -Wextra -Werror "-DSBT_ISOLATED_TEST_PROFILE=$profile" -I (Join-Path $repo 'src') (Join-Path $repo 'test/host/isolated_namespace_test.cpp') -o $exe
+    if($LASTEXITCODE -ne 0){throw 'Isolated namespace host compile failed'}
+    & $exe
+    if($LASTEXITCODE -ne 0){throw 'Isolated namespace assertions failed'}
+}
