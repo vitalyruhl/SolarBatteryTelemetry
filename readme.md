@@ -1,6 +1,86 @@
 # SolarBatteryTelemetry
 
-Installed firmware **1.4.6** uses published ConfigManager **4.9.0** with **Settings enabled and Live disabled**. It reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only. This build change does not establish a fix for the historical panic or HTTP-delivery issue.
+## WiFi power-policy checkpoint 1.4.8
+
+Companion CM implementation checkpoint: `801e3cf76dc0c8801a4176241a600aa92be9336f`
+(on `fix/mqtt-session-recovery`). The version-specific archived inputs below,
+including their original manifests, remain the exact firmware dependency source.
+
+This installed checkpoint uses an independently frozen, unpublished CM 4.10.1 package
+through `file://.local/cm-wifi-coex-4.10.1-package`. Run
+`python tools/prepare_cm_development.py --source-package <frozen-package-path>`
+to copy and verify that package and its original manifest without importing the
+mutable CM checkout or deriving new Git provenance. Without an explicit source,
+the helper looks under the neighboring CM repository's `.local` directory.
+Build/dependency outputs use `.pio/wifi-coex-1.4.8`;
+deployed 1.4.6 artifacts and private settings are preserved. The historical
+published CM 4.9.0 binding remains guarded and tested separately.
+
+CM adds one setting, `WiFiPowerSave`, default false, and reports requested mode,
+native mode and application/readback errors in Settings JSON with Live disabled.
+On classic ESP32, initializing BLE also acquires a controller-lifetime coexistence
+lease: CM confirms native MIN_MODEM before starting the controller, retains it
+through pause/reset, and explains an overridden OFF preference without changing
+its stored value. WiFi-only operation can still use NONE. The earlier unreleased
+1.4.7 / CM 4.10.0 artifact aborted during BLE initialization with native NONE;
+it is preserved as crash evidence and is not the current candidate.
+SBT adds no direct sleep override and retains legacy MQTT transport to isolate
+the WiFi/BLE comparison; bounded MQTT I/O is not enabled. BLE algorithms, MOS
+semantics and testesp's permanent control block/initial empty peers are unchanged.
+Source freshness uses the complete immutable manifest, with only consumer-local
+generated UI assets and scoped caches excepted. This is not a public CM release
+or a long-term stability claim.
+
+The exact owner-authorized OTA was accepted at 21:50:21.698503 UTC on 2026-10-25.
+Binary SHA256: `0bc36ac5cf5d5e9532c450b16856ad210c606c86c5ffb06e291803ce895d09fd`.
+Fresh identity, version 1.4.8, Live disabled/Settings enabled and inactive OTA were
+verified. All 32 prior settings matched their readback, with exactly one new
+WiFiPowerSave=false setting; masked secrets compare only as returned. Native
+MIN_MODEM with the explicit BLE coexistence reason and successful apply/read
+confirmed the intended policy. At 21:53:53 UTC, real BMS/Victron health sequences
+had advanced to 35/69 and both reported available. Uptime reached 190099 ms at
+21:53:37 UTC without a further observed drop. COM8 was outside real peer range,
+and the owner explicitly accepted the transition to production acquisition.
+
+The 188-file CM freeze's manifest SHA256 is
+`6c04701572f9d45e10277ea6aa8eefa9763ab98d57bd6d6676ff3308ad1a6fe7`.
+The restored `.local` package remains ignored, but its exact source ZIP, SHA256
+and original manifest are tracked under `dependencies/cm/`, including LICENSE.
+The companion CM commit is not a Registry release. Later README/changelog notes
+are documentation-only differences from the frozen inputs. Original packages and
+OTA binaries were not regenerated for this checkpoint.
+
+From the repository root, restore the package before building:
+
+```powershell
+$archive = 'dependencies/cm/cm-4.10.1-source.zip'
+$expected = '3e39252b3eca6bebf5d2fc73dd97ef72a16daa6d573a10865d4c7ecd31d3e606'
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $expected) { throw 'CM archive hash mismatch' }
+$destination = '.local/cm-wifi-coex-4.10.1-package'
+if (Test-Path -LiteralPath $destination) { throw 'Preserve the existing package; choose a clean checkout for restore' }
+Expand-Archive -LiteralPath $archive -DestinationPath $destination
+```
+
+The ZIP contains exactly the 188 manifest entries plus `manifest.sha`. Its
+roundtrip was hash-verified before this checkpoint; the wrapper verifies all
+extracted source hashes again. The `.zip.sha256` and external `.manifest.sha`
+record the archive digest and original source manifest. The preparation helper
+above remains an alternative when the original frozen directory is available.
+
+An earlier production 1.4.6 uptime fell from 20710524 ms at 21:27:54 UTC to
+10118 ms at 21:28:57 UTC, proving a pre-OTA restart. The new image subsequently
+reported resetReason=6 after OTA (TASK_WDT in the actual SDK). The initiating
+cause, including any connection to the old firmware's OTA path, remains open.
+This checkpoint does not claim to fix that restart or establish long-term runtime
+stability.
+
+Real COM8 BMS testing requires a separately verified production-controller release;
+read-only GATT still opens a connection. Restoring the production peer must wait
+until COM8 has stopped that controller. Passive Victron advertisements do not
+require that GATT handoff. Report actual received frames or an observed RF limit;
+empty-peer lifecycle checks and emulated frames do not qualify real acquisition.
+
+The preceding firmware **1.4.6** used published ConfigManager **4.9.0** with **Settings enabled and Live disabled**. It reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only. This build change does not establish a fix for the historical panic or HTTP-delivery issue.
 
 ## Current integration work
 
@@ -25,9 +105,9 @@ See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout]
 
 ## Published ConfigManager dependency
 
-The consumer pins `vitaly.ruhl/ESP32 Configuration Manager@4.9.0` from the PlatformIO Registry. Local CM source/symlink overrides are rejected. The precompile check validates registry owner/version, coherent mirrors and the generated Settings-only asset proof. The package's official generator creates derived WebUI assets only inside the consumer-local dependency directory; it does not use the unpublished sibling checkout or change PlatformIO's shared cache.
+The previous 1.4.6 checkpoint pinned `vitaly.ruhl/ESP32 Configuration Manager@4.9.0` from the PlatformIO Registry. Checkpoint 1.4.8 selects only the explicit frozen local CM 4.10.1 URI above; other source/symlink overrides are rejected. The precompile check validates selected provenance/version, coherent mirrors and the generated Settings-only asset proof. The package's official generator creates derived WebUI assets only inside the consumer-local dependency directory; it does not use the mutable sibling checkout or change PlatformIO's shared cache.
 
-Both production profiles explicitly set `CM_ENABLE_LIVE_UI=0` and `CM_ENABLE_SETTINGS_UI=1`. Application metadata registration treats CM's disabled Live API as an intentional no-op, so disabling Live cannot abort BLE/MQTT initialization. Network credentials and OTA defaults remain in ignored local files. Remove obsolete `custom_cm_path` and CM `symlink://` entries from private overrides; preserve their other settings. Build outputs and dependencies are isolated under `.pio/registry-settings`.
+Both production profiles explicitly set `CM_ENABLE_LIVE_UI=0` and `CM_ENABLE_SETTINGS_UI=1`. Application metadata registration treats CM's disabled Live API as an intentional no-op, so disabling Live cannot abort BLE/MQTT initialization. Network credentials and OTA defaults remain in ignored local files. Remove obsolete `custom_cm_path` and CM `symlink://` entries from private overrides; preserve their other settings. Candidate outputs use `.pio/wifi-coex-1.4.8`; `.pio/registry-settings` retains the earlier checkpoint.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
@@ -47,9 +127,9 @@ pio run -e ota
 
 ## Isolated COM8 profile
 
-`pio run -e testesp` builds a separate diagnostic artifact at `.pio/registry-settings/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
+`pio run -e testesp` builds a separate diagnostic artifact at `.pio/wifi-coex-1.4.8/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
 
-The profile reports absent peers as unavailable. It qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. ConfigManager 4.9.0 still has synchronous MQTT transport paths; the unpublished 4.9.1 bounded-transport changes are deliberately excluded. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
+The profile reports absent peers as unavailable. Empty-peer operation qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. SBT retains synchronous legacy MQTT transport even with CM 4.10.1; it does not enable that library's optional bounded adapter. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
 
 The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0 and predates the current 1.4.6 rollout. Known upstream deprecation/LTO warnings remain.
 

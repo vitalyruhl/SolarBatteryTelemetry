@@ -1,4 +1,4 @@
-"""Resolve only the published CM package selected by this consumer's exact pin."""
+"""Resolve explicit published or frozen development CM bindings and Settings assets."""
 import json
 import hashlib
 import importlib.util
@@ -10,6 +10,29 @@ import sys
 
 PIN = 'vitaly.ruhl/ESP32 Configuration Manager@4.9.0'
 VERSION = '4.9.0'
+DEVELOPMENT_PIN = 'file://.local/cm-wifi-coex-4.10.1-package'
+DEVELOPMENT_VERSION = '4.10.1'
+
+
+def development_package(env):
+    library = Path(env.subst('$PROJECT_LIBDEPS_DIR')) / env.subst('$PIOENV') / 'ESP32 Configuration Manager'
+    if library.resolve() != library.absolute():
+        raise RuntimeError('Development CM must be a consumer-local copy, not a source symlink')
+    metadata = json.loads((library / 'library.json').read_text(encoding='utf-8-sig'))
+    if metadata.get('name') != 'ESP32 Configuration Manager' or metadata.get('version') != DEVELOPMENT_VERSION:
+        raise RuntimeError('Development ConfigManager manifest version must be 4.10.1')
+    provenance = json.loads((library / '.piopm').read_text(encoding='utf-8-sig'))
+    if provenance.get('version') != DEVELOPMENT_VERSION or provenance.get('spec', {}).get('uri') != DEVELOPMENT_PIN:
+        raise RuntimeError('Development ConfigManager URI/version provenance mismatch')
+    header = (library / 'src/ConfigManager.h').read_text(encoding='utf-8-sig')
+    match = re.search(r'^#define\s+CONFIGMANAGER_VERSION\s+"([^"]+)"', header, re.M)
+    web = json.loads((library / 'webui/package.json').read_text(encoding='utf-8-sig'))
+    if not match or match[1] != DEVELOPMENT_VERSION or web.get('version') != DEVELOPMENT_VERSION:
+        raise RuntimeError('Development ConfigManager version mirror mismatch')
+    from prepare_cm_development import verify_development_package
+    source = Path(env.subst('$PROJECT_DIR')) / DEVELOPMENT_PIN.removeprefix('file://')
+    verify_development_package(source, library)
+    return library
 
 def registry_package(libdeps, environment='usb'):
     library = Path(libdeps) / environment / 'ESP32 Configuration Manager'
@@ -42,7 +65,12 @@ def validate_environment(env):
         dependencies = dependencies.splitlines()
     if any(str(value).strip().startswith('symlink://') for value in dependencies):
         raise RuntimeError('symlink dependencies are not allowed for the Registry build')
-    if PIN not in [str(value).strip() for value in dependencies]:
+    selected = [str(value).strip() for value in dependencies]
+    if DEVELOPMENT_PIN in selected:
+        if selected.count(DEVELOPMENT_PIN) != 1 or PIN in selected:
+            raise RuntimeError('Select exactly one explicit ConfigManager binding')
+        return development_package(env)
+    if selected.count(PIN) != 1:
         raise RuntimeError('The exact Registry CM 4.9.0 pin is required')
     return registry_package(env.subst('$PROJECT_LIBDEPS_DIR'), env.subst('$PIOENV'))
 
@@ -59,14 +87,16 @@ def prepare_settings_ui(env, library):
     process_env.update({'VITE_' + key: value for key, value in features.items()})
     process_env.update(NODE_ENV='production', NPM_CONFIG_INCLUDE='dev')
     subprocess.run([sys.executable, str(library / 'tools/preCompile_script.py')], cwd=str(library), env=process_env, check=True)
+    if DEVELOPMENT_PIN in env.GetProjectOption('lib_deps', []):
+        development_package(env)
     asset = library / 'src/html_content.h'
     text = asset.read_text(encoding='utf-8-sig')
     for macro, expected in (('CM_WEBUI_LIVE_UI', '0'), ('CM_WEBUI_SETTINGS_UI', '1')):
         if not re.search(r'^#define\s+' + macro + r'\s+' + expected + r'\s*$', text, re.M):
-            raise RuntimeError('Generated Registry UI profile does not match Settings-only flags')
+            raise RuntimeError('Generated ConfigManager UI profile does not match Settings-only flags')
     proof = json.loads((library / '.pio/cm-webui-build.json').read_text(encoding='utf-8-sig'))
     fingerprint = features_module.source_fingerprint(library, {**features, 'NODE_ENV': 'production'})
     asset_hash = hashlib.sha256(asset.read_bytes()).hexdigest()
     if proof.get('fingerprint') != fingerprint or proof.get('features') != features or proof.get('header_sha256') != asset_hash:
-        raise RuntimeError('Generated Registry UI source/flags/hash proof mismatch')
+        raise RuntimeError('Generated ConfigManager UI source/flags/hash proof mismatch')
     return asset_hash
