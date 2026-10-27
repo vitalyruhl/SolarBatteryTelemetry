@@ -20,16 +20,16 @@ def registry_cm_path() -> Path:
     supplied = None
     if '--config-manager-path' in sys.argv:
         supplied = sys.argv[sys.argv.index('--config-manager-path') + 1]
-    candidates = [ROOT / '.pio/wifi-coex-1.4.8/libdeps' / environment / 'ESP32 Configuration Manager'
+    candidates = [ROOT / '.pio/ble-reboot-1.4.12/libdeps' / environment / 'ESP32 Configuration Manager'
                   for environment in ('ota', 'testesp', 'usb')]
     cm = Path(supplied) if supplied else next((path for path in candidates if (path / 'library.json').is_file()), candidates[0])
     metadata = json.loads((cm / 'library.json').read_text(encoding='utf-8-sig'))
-    if metadata.get('name') != 'ESP32 Configuration Manager' or metadata.get('version') not in ('4.9.0', '4.10.1'):
-        raise RuntimeError('Host validation requires published CM 4.9.0 or the frozen CM 4.10.1 package')
-    if metadata['version'] == '4.10.1':
+    if metadata.get('name') != 'ESP32 Configuration Manager' or metadata.get('version') not in ('4.9.0', '4.10.5'):
+        raise RuntimeError('Host validation requires published CM 4.9.0 or the frozen CM 4.10.5 package')
+    if metadata['version'] == '4.10.5':
         sys.path.insert(0, str(ROOT / 'tools'))
         from prepare_cm_development import verify_development_package
-        verify_development_package(ROOT / '.local/cm-wifi-coex-4.10.1-package', cm)
+        verify_development_package(ROOT / '.local/cm-ble-reboot-4.10.5-final-package', cm)
     return cm
 
 

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <ConfigManager.h>
 #include "runtime/AppRuntimeMetadata.h"
+#include "diagnostics/PanicSummaryPublisher.h"
 #include <mqtt/MQTTManager.h>
 #include <atomic>
 #include "MqttConfigMailbox.h"
@@ -20,6 +21,7 @@ class MqttService final : public Transport {
  ConfigMailbox mailbox_;
  MqttConfig desired_{};uint32_t seen_=0;
  Publisher publisher_;VictronHistoryPublisher victronHistory_;
+ sbt::diagnostics::PanicSummaryPublisher panicSummary_;
  StatusPublisher statuses_;CommandSession session_;bms::Readout* bms_=nullptr;
  bool subscribed_=false;uint32_t subscribeAt_=0,lastResultSequence_=0;
  struct Health {bool initialized=false,available=false;const char* reason="unknown";uint32_t sentAt=0,receivedAt=0,sequence=0;} health_[2];
@@ -95,6 +97,7 @@ class MqttService final : public Transport {
   view_.fullRefreshMs=desired_.fullRefreshMs;view_.delivered=publisher_.delivered();view_.state=static_cast<int>(mqtt_.getState());}
 
 public:
+ bool capturePanicSummary(const sbt::diagnostics::PanicSummary& summary){return panicSummary_.capture(summary);}
  bool attach(ConfigManagerClass& cm,const char* broker,int port,const char* user,const char* password,bool enableDefault){
   if(ui_)return false; // Persistent settings must be constructed and registered only once.
   char client[65];formatClientId(ESP.getEfuseMac(),client,sizeof(client));
@@ -108,7 +111,7 @@ public:
   if(!ui_->attachTo(cm))return false;
   // Deliberately no MQTTManager::attach(): it would expose loop-owned settings to AsyncWeb writes.
   // Standalone public settings/begin/loop retain System-Info/ESP and /WiFi conventions.
-  mqtt_.setBufferSize(1536);mqtt_.setRetryInterval(10000);mqtt_.setMaxRetries(10);mqtt_.setKeepAlive(30);
+  mqtt_.setBufferSize(sbt::diagnostics::mqttBufferBytes);mqtt_.setRetryInterval(10000);mqtt_.setMaxRetries(10);mqtt_.setKeepAlive(30);
   mqtt_.onMQTTConnect([this](){publisher_.onConnected();victronHistory_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
   mqtt_.onMQTTDisconnect([this](){session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();});
   mqtt_.onMessage([this](const char* topic,const byte* payload,unsigned int length){message(topic,payload,length);});
@@ -175,6 +178,7 @@ public:
   // Resolve root transitions before CM's automatic System-Info publication.
   runPreparedMqttLoop(publisher_,now,*this,desired_.enabled&&desired_.server[0],
    [this](){return otaPaused_.load();},[this](){mqtt_.loop();});
+  panicSummary_.tick(now,publisher_.root(),*this);
   controlStatus();statuses_.tick(now,publisher_.root(),*this);
   victronHistory_.tick(now,publisher_.root(),*this);
   updateView();

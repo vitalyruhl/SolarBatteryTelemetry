@@ -17,8 +17,8 @@ EXCLUDED = {"node_modules", ".pio", ".git", ".local", ".temp", "__pycache__", ".
 ROOT_FILES = ("library.json", "README.md", "README", "README.txt", "LICENSE", "LICENSE.md", "LICENSE.txt")
 TREE_ROOTS = ("src", "tools", "webui")
 MANIFEST = "manifest.sha"
-VERSION = "4.10.1"
-PACKAGE = "cm-wifi-coex-4.10.1-package"
+VERSION = "4.10.5"
+PACKAGE = "cm-ble-reboot-4.10.5-final-package"
 
 
 def is_reparse(path: Path) -> bool:

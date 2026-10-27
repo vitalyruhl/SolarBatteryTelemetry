@@ -10,8 +10,8 @@ import sys
 
 PIN = 'vitaly.ruhl/ESP32 Configuration Manager@4.9.0'
 VERSION = '4.9.0'
-DEVELOPMENT_PIN = 'file://.local/cm-wifi-coex-4.10.1-package'
-DEVELOPMENT_VERSION = '4.10.1'
+DEVELOPMENT_PIN = 'file://.local/cm-ble-reboot-4.10.5-final-package'
+DEVELOPMENT_VERSION = '4.10.5'
 
 
 def development_package(env):
@@ -20,7 +20,7 @@ def development_package(env):
         raise RuntimeError('Development CM must be a consumer-local copy, not a source symlink')
     metadata = json.loads((library / 'library.json').read_text(encoding='utf-8-sig'))
     if metadata.get('name') != 'ESP32 Configuration Manager' or metadata.get('version') != DEVELOPMENT_VERSION:
-        raise RuntimeError('Development ConfigManager manifest version must be 4.10.1')
+        raise RuntimeError('Development ConfigManager manifest version must be 4.10.5')
     provenance = json.loads((library / '.piopm').read_text(encoding='utf-8-sig'))
     if provenance.get('version') != DEVELOPMENT_VERSION or provenance.get('spec', {}).get('uri') != DEVELOPMENT_PIN:
         raise RuntimeError('Development ConfigManager URI/version provenance mismatch')
