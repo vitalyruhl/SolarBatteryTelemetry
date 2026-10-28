@@ -7,10 +7,12 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "diagnostics/HeapFailureDiagnostics.h"
+#include "diagnostics/PanicSummaryCapture.h"
 #include <WiFi.h>
 #include "settings.h"
 #include "smoke/SmokePolicy.h"
 #include "smoke/IsolatedTestProfile.h"
+#include "smoke/PanicOnceProbe.h"
 #include "telemetry/MqttService.h"
 #include "victron/VictronReadout.h"
 #include "bms/BmsReadout.h"
@@ -26,6 +28,9 @@ static auto& wifiSettings=core.wifi;
 static auto& systemSettings=core.system;
 static cm::CoreWiFiServices wifiServices;
 static bool appReady=false;
+#if SBT_TEST_PANIC_ONCE
+static bool panicProbeSetupComplete=false;
+#endif
 static bool bleWorkerReady=false; // Written before web-server startup, then immutable.
 static void updateStatusLED();
 static void setupLogging();
@@ -115,6 +120,7 @@ static bool attachSmokeRuntime() {
 }
 
 void setup() {
+    telemetryMqtt.capturePanicSummary(sbt::diagnostics::captureStoredPanicOnce());
     setupLogging();
     SBT_INSTALL_HEAP_FAILURE_DIAGNOSTICS();
     ConfigManager.setAppName(sbt::testprofile::isolated?"SolarBatteryTelemetry-Test":APP_NAME);
@@ -134,6 +140,11 @@ void setup() {
     if(!bmsReadout.attach(ConfigManager,bluetooth)){lmg.logTag(LL::Error, "SETUP", "BMS settings initialization failed");return;}
     telemetryMqtt.bindBms(bmsReadout);
     bluetooth.setEventHandler([](const cm::BleEvent& event){victronReadout.onEvent(event);bmsReadout.onEvent(event);});
+    // CM polls this from its main loop; only the BLE owner may deinitialize the radio.
+    ConfigManager.getOTAManager().setRebootPreparation([]() {
+        bluetooth.requestShutdownForRestart();
+        return bluetooth.isShutdownForRestartComplete();
+    });
     ConfigManager.getOTAManager().setLifecycleObserver([](const OtaLifecycleEvent& event) {
         telemetryMqtt.pauseForOta(event.stage==OtaStage::Starting||event.stage==OtaStage::Succeeded);
         if(event.stage==OtaStage::Starting || event.stage==OtaStage::Succeeded)
@@ -164,6 +175,9 @@ void setup() {
     ConfigManager.startWebServer();
     applyAccessPointMacPriority();
     lmg.logTag(LL::Info, "SETUP", "Completed successfully. Starting main loop...");
+#if SBT_TEST_PANIC_ONCE
+    panicProbeSetupComplete=true;
+#endif
 }
 
 void loop() {
@@ -199,6 +213,9 @@ void loop() {
 #endif
 
 
+#if SBT_TEST_PANIC_ONCE
+    sbt::testprofile::tickPanicOnceProbe(now,panicProbeSetupComplete&&bleWorkerReady&&telemetryMqtt.connected());
+#endif
     delay(1);
 }
 

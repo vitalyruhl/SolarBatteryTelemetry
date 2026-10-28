@@ -1,6 +1,200 @@
 # SolarBatteryTelemetry
 
-Installed firmware **1.4.6** uses published ConfigManager **4.9.0** with **Settings enabled and Live disabled**. It reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only. This build change does not establish a fix for the historical panic or HTTP-delivery issue.
+## BLE-owned HTTP reboot preparation 1.4.12
+
+This patch selects the unpublished immutable CM 4.10.5 package at
+`file://.local/cm-ble-reboot-4.10.5-final-package`. Before starting the web server,
+the application registers a nonblocking reboot-preparation callback: request
+terminal BLE worker shutdown and return only its completed acknowledgment.
+No SDK shutdown or restart runs in this application callback. CM owns timeout,
+failure handling, native controller checks, and the eventual main-loop restart.
+The WiFi coexistence lease remains conservative until reboot. The task watchdog
+remains enabled; no BLE reinitialization is attempted after terminal shutdown.
+
+Build outputs and dependency copies use `.pio/ble-reboot-1.4.12`. The `testesp`
+profile enables bounded CM shutdown phase markers, excluded from `usb`; neither
+`usb` nor normal
+`testesp` enables deliberate panic injection. The stored-panic diagnostics,
+isolated test namespace and BMS control gates remain unchanged. The 1.4.11 BLE
+self-OTA failed with a watchdog while the same image without BLE restarted
+normally. The initialized-BLE self-OTA and the separate production restart validation passed; see [the 1.4.12 acceptance report](docs/acceptance/2026-10-27-http-ota-ble-shutdown.md).
+Previous firmware and source freezes remain unchanged.
+
+When switching a shared fixture between SIL and SBT, use a complete USB upload (pio run -e testesp -t upload) that writes the bootloader, partition table and OTA selection as well as the application. An application-only upload cannot replace a different partition layout. Production HTTP OTA continues to require the existing compatible SBT layout.
+
+## HTTP OTA reboot correction candidate 1.4.11
+
+This patch selects the unpublished, immutable CM 4.10.4 source package at
+`file://.local/cm-http-reboot-4.10.4-final-package`. CM defers HTTP-success reboot
+from the AsyncTCP disconnect callback to its existing main-loop OTA handler.
+The task watchdog remains enabled. The bounded stored-panic diagnostics from
+1.4.10, Settings-only UI, telemetry, BMS control gates, and isolated test identity
+remain unchanged. A stored dump can be replaced during OTA and is not timestamped;
+this change does not establish the cause of the earlier unrelated runtime panic.
+
+Build and dependency outputs use `.pio/http-reboot-1.4.11`. Validate `usb` and
+normal `testesp`; neither may contain the intentional panic marker. The separate
+`testesp_panic` profile remains an explicitly selected fixture, not a production
+or normal test image. Previous frozen packages and firmware artifacts stay intact.
+COM8 HTTP OTA with active passive BLE and production acceptance remain separate
+owner-controlled gates; this source update is not a long-duration stability claim.
+
+## Bounded abort-origin diagnostics candidate 1.4.10
+
+The existing one-shot panic report adds `abort_status`, `abort_caller_pc`, and
+`abort_core`. After successful SDK summary and CRC/bounds checks, a read-only
+ELF32 resolver follows only the saved abort-details pointer into one unambiguous,
+file-backed `PT_LOAD` segment. It reads at most 64 bytes there and accepts only
+the exact SDK `abort()` message grammar. Only the parsed caller PC/core leave
+the device; no saved pointer, registers, text, arbitrary memory, or HTTP endpoint
+are exposed. Unsupported context, invalid structure, ambiguity, truncation,
+missing NUL, format mismatch, or read failure produce null result fields and a
+fixed status. No whole-image string scan or live-RAM dereference is performed.
+
+Context recognition is limited to the inspected original 1.4.8 and normal 1.4.9
+ELF identities at their known `panic_abort` instruction, or the currently running
+ELF identity at the pinned SDK's inspected abort instruction. The resolver accepts
+only the classic ESP32 CRC32 format: 20-byte outer header, version `0x100`, four-byte
+checksum footer, ELF32 little-endian Xtensa, at most 160 program headers, and a
+64 KiB image. The original dump can predate the most recent reset or have been
+replaced during OTA; no crash time or firmware version is inferred from the task
+name. An extracted abort caller identifies a call site, not automatically its
+underlying cause.
+
+CM remains the exact unpublished 4.10.1 freeze. Build outputs use
+`.pio/abort-origin-1.4.10`. Validate with the existing panic-summary host runner,
+`pio run -e usb`, and `pio run -e testesp_panic`; the latter remains COM8-only.
+The earlier 1.4.9 and 1.4.8 artifacts remain immutable historical evidence.
+The 1.4.10 panic fixture uses a new RTC latch generation so the prior 1.4.9
+fixture latch does not suppress this one new test; subsequent warm reboots remain
+suppressed. This policy is compiled out of the normal profile.
+
+## Stored panic diagnostics candidate 1.4.9
+
+This diagnostic patch reads the existing coredump once at the start of `setup`,
+before BLE workers start. It verifies partition bounds and the SDK CRC before
+decoding the bounded SDK summary. It never erases the dump or exports raw memory,
+registers, credentials, or a new HTTP endpoint. Normal BLE startup ordering and
+MOS controls are unchanged; the exact unpublished CM 4.10.1 dependency is retained.
+
+The existing MQTT owner publishes `<root>/Diagnostics/Panic` without retention.
+The immutable report identifies a `historical_stored_panic`, SDK image/check/summary
+status, dump address/size, original crashed ELF SHA256 prefix when valid, task name, PC,
+exception cause, and at most sixteen backtrace addresses. `dump_valid` means the
+partition bounds and SDK CRC passed; it does not mean the backtrace is uncorrupted
+or that decoding succeeded. Missing or corrupt dumps produce status-only reports.
+No crash timestamp is inferred. The report can refer to an earlier firmware boot;
+symbolication must use its original ELF identity, not this diagnostic build.
+This Arduino SDK exposes only sixteen hex characters of the stored ELF hash;
+`elf_sha256_hex_chars` reports that length and `elf_sha256_complete` is false.
+Match the prefix against the preserved original ELF, never invent the missing suffix.
+
+The payload is bounded to 1024 bytes, with the complete topic and MQTT header
+fitting the existing 1536-byte buffer. There are at most twelve local publish
+attempts per boot, spaced at least five seconds apart while connected. Successful
+QoS0 local acceptance ends retries, including across reconnects; broker receipt is
+not guaranteed. No repeated flash reads occur on reconnect. `testesp` keeps the
+report under `SBTTest/COM8/Diagnostics/Panic` and retains its existing command block.
+
+Build outputs use `.pio/panic-summary-1.4.9`. Focused offline validation:
+`powershell -File tools/test/run-panic-summary-host-tests.ps1`; firmware validation:
+`pio run -e usb` and `pio run -e testesp`. This candidate adds diagnostic evidence;
+it does not identify or fix the observed 1.4.8 panic, and is not a long-run pass.
+The stored coredump and original 1.4.8 ELF must remain preserved for diagnosis.
+
+`testesp_panic` is a separate, explicitly destructive COM8-only diagnostic profile.
+It inherits every isolated test guard and requires `SBT_ISOLATED_TEST_PROFILE=1`
+at compile time. After sixty continuous seconds with the application, BLE worker,
+and MQTT connection ready, it writes a two-word RTC no-init latch before one
+deliberate `abort()`. After the panic reboot, early capture can report the real
+SDK coredump; the retained latch prevents a second deliberate panic. A warm reboot
+does not re-arm it. A power cycle can lose the RTC latch. No NVS flag is written.
+Normal `usb` and `testesp` profiles compile out the trigger and its marker.
+Only the owner may flash/run this special profile, after preserving the complete
+COM8 flash image, and must restore that image after the bounded diagnostic test.
+Never upload `testesp_panic` to production.
+
+## WiFi power-policy checkpoint 1.4.8
+
+Companion CM implementation checkpoint: `801e3cf76dc0c8801a4176241a600aa92be9336f`
+(on `fix/mqtt-session-recovery`). The version-specific archived inputs below,
+including their original manifests, remain the exact firmware dependency source.
+
+This installed checkpoint uses an independently frozen, unpublished CM 4.10.1 package
+through `file://.local/cm-wifi-coex-4.10.1-package`. Run
+`python tools/prepare_cm_development.py --source-package <frozen-package-path>`
+to copy and verify that package and its original manifest without importing the
+mutable CM checkout or deriving new Git provenance. Without an explicit source,
+the helper looks under the neighboring CM repository's `.local` directory.
+Build/dependency outputs use `.pio/wifi-coex-1.4.8`;
+deployed 1.4.6 artifacts and private settings are preserved. The historical
+published CM 4.9.0 binding remains guarded and tested separately.
+
+CM adds one setting, `WiFiPowerSave`, default false, and reports requested mode,
+native mode and application/readback errors in Settings JSON with Live disabled.
+On classic ESP32, initializing BLE also acquires a controller-lifetime coexistence
+lease: CM confirms native MIN_MODEM before starting the controller, retains it
+through pause/reset, and explains an overridden OFF preference without changing
+its stored value. WiFi-only operation can still use NONE. The earlier unreleased
+1.4.7 / CM 4.10.0 artifact aborted during BLE initialization with native NONE;
+it is preserved as crash evidence and is not the current candidate.
+SBT adds no direct sleep override and retains legacy MQTT transport to isolate
+the WiFi/BLE comparison; bounded MQTT I/O is not enabled. BLE algorithms, MOS
+semantics and testesp's permanent control block/initial empty peers are unchanged.
+Source freshness uses the complete immutable manifest, with only consumer-local
+generated UI assets and scoped caches excepted. This is not a public CM release
+or a long-term stability claim.
+
+The exact owner-authorized OTA was accepted at 21:50:21.698503 UTC on 2026-10-25.
+Binary SHA256: `0bc36ac5cf5d5e9532c450b16856ad210c606c86c5ffb06e291803ce895d09fd`.
+Fresh identity, version 1.4.8, Live disabled/Settings enabled and inactive OTA were
+verified. All 32 prior settings matched their readback, with exactly one new
+WiFiPowerSave=false setting; masked secrets compare only as returned. Native
+MIN_MODEM with the explicit BLE coexistence reason and successful apply/read
+confirmed the intended policy. At 21:53:53 UTC, real BMS/Victron health sequences
+had advanced to 35/69 and both reported available. Uptime reached 190099 ms at
+21:53:37 UTC without a further observed drop. COM8 was outside real peer range,
+and the owner explicitly accepted the transition to production acquisition.
+
+The 188-file CM freeze's manifest SHA256 is
+`6c04701572f9d45e10277ea6aa8eefa9763ab98d57bd6d6676ff3308ad1a6fe7`.
+The restored `.local` package remains ignored, but its exact source ZIP, SHA256
+and original manifest are tracked under `dependencies/cm/`, including LICENSE.
+The companion CM commit is not a Registry release. Later README/changelog notes
+are documentation-only differences from the frozen inputs. Original packages and
+OTA binaries were not regenerated for this checkpoint.
+
+From the repository root, restore the package before building:
+
+```powershell
+$archive = 'dependencies/cm/cm-4.10.1-source.zip'
+$expected = '3e39252b3eca6bebf5d2fc73dd97ef72a16daa6d573a10865d4c7ecd31d3e606'
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant() -ne $expected) { throw 'CM archive hash mismatch' }
+$destination = '.local/cm-wifi-coex-4.10.1-package'
+if (Test-Path -LiteralPath $destination) { throw 'Preserve the existing package; choose a clean checkout for restore' }
+Expand-Archive -LiteralPath $archive -DestinationPath $destination
+```
+
+The ZIP contains exactly the 188 manifest entries plus `manifest.sha`. Its
+roundtrip was hash-verified before this checkpoint; the wrapper verifies all
+extracted source hashes again. The `.zip.sha256` and external `.manifest.sha`
+record the archive digest and original source manifest. The preparation helper
+above remains an alternative when the original frozen directory is available.
+
+An earlier production 1.4.6 uptime fell from 20710524 ms at 21:27:54 UTC to
+10118 ms at 21:28:57 UTC, proving a pre-OTA restart. The new image subsequently
+reported resetReason=6 after OTA (TASK_WDT in the actual SDK). The initiating
+cause, including any connection to the old firmware's OTA path, remains open.
+This checkpoint does not claim to fix that restart or establish long-term runtime
+stability.
+
+Real COM8 BMS testing requires a separately verified production-controller release;
+read-only GATT still opens a connection. Restoring the production peer must wait
+until COM8 has stopped that controller. Passive Victron advertisements do not
+require that GATT handoff. Report actual received frames or an observed RF limit;
+empty-peer lifecycle checks and emulated frames do not qualify real acquisition.
+
+The preceding firmware **1.4.6** used published ConfigManager **4.9.0** with **Settings enabled and Live disabled**. It reads a JBD 14-cell BMS and passive Victron SmartSolar Instant Readout on one ESP32 and publishes change-triggered MQTT telemetry with a configurable full refresh (60 seconds by default). Guarded charge/discharge MOS control is implemented but disabled by default; Victron remains read-only. This build change does not establish a fix for the historical panic or HTTP-delivery issue.
 
 ## Current integration work
 
@@ -25,9 +219,9 @@ See [MQTT contract](docs/MQTT.md), [BMS readout](docs/BMS.md), [Victron readout]
 
 ## Published ConfigManager dependency
 
-The consumer pins `vitaly.ruhl/ESP32 Configuration Manager@4.9.0` from the PlatformIO Registry. Local CM source/symlink overrides are rejected. The precompile check validates registry owner/version, coherent mirrors and the generated Settings-only asset proof. The package's official generator creates derived WebUI assets only inside the consumer-local dependency directory; it does not use the unpublished sibling checkout or change PlatformIO's shared cache.
+The previous 1.4.6 checkpoint pinned `vitaly.ruhl/ESP32 Configuration Manager@4.9.0` from the PlatformIO Registry. Checkpoint 1.4.8 selects only the explicit frozen local CM 4.10.1 URI above; other source/symlink overrides are rejected. The precompile check validates selected provenance/version, coherent mirrors and the generated Settings-only asset proof. The package's official generator creates derived WebUI assets only inside the consumer-local dependency directory; it does not use the mutable sibling checkout or change PlatformIO's shared cache.
 
-Both production profiles explicitly set `CM_ENABLE_LIVE_UI=0` and `CM_ENABLE_SETTINGS_UI=1`. Application metadata registration treats CM's disabled Live API as an intentional no-op, so disabling Live cannot abort BLE/MQTT initialization. Network credentials and OTA defaults remain in ignored local files. Remove obsolete `custom_cm_path` and CM `symlink://` entries from private overrides; preserve their other settings. Build outputs and dependencies are isolated under `.pio/registry-settings`.
+Both production profiles explicitly set `CM_ENABLE_LIVE_UI=0` and `CM_ENABLE_SETTINGS_UI=1`. Application metadata registration treats CM's disabled Live API as an intentional no-op, so disabling Live cannot abort BLE/MQTT initialization. Network credentials and OTA defaults remain in ignored local files. Remove obsolete `custom_cm_path` and CM `symlink://` entries from private overrides; preserve their other settings. Candidate outputs use `.pio/wifi-coex-1.4.8`; `.pio/registry-settings` retains the earlier checkpoint.
 
 The tracked consumer dependencies are NimBLE-Arduino 2.5.1 and PubSubClient 2.8. The stack is espressif32 7.0.1 / Arduino-ESP32 2.0.17 / nodemcu-32s with dual 1792 KiB OTA slots. See [local setup](docs/ble-smoke-test.md); its older 4.5.0 checkpoint is historical.
 
@@ -47,9 +241,9 @@ pio run -e ota
 
 ## Isolated COM8 profile
 
-`pio run -e testesp` builds a separate diagnostic artifact at `.pio/registry-settings/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
+`pio run -e testesp` builds a separate diagnostic artifact at `.pio/ble-reboot-1.4.12/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
 
-The profile reports absent peers as unavailable. It qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. ConfigManager 4.9.0 still has synchronous MQTT transport paths; the unpublished 4.9.1 bounded-transport changes are deliberately excluded. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
+The profile reports absent peers as unavailable. Empty-peer operation qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. SBT retains synchronous legacy MQTT transport even with CM 4.10.1; it does not enable that library's optional bounded adapter. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
 
 The earlier JBD acceptance USB-profile build used 1,342,481 bytes of flash and 80,360 bytes of static RAM. That exact build artifact was used for network OTA; no separate OTA-profile rebuild was needed. That historical acceptance used firmware 0.3.0 and predates the current 1.4.6 rollout. Known upstream deprecation/LTO warnings remain.
 
