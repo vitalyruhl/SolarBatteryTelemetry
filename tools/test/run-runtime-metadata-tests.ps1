@@ -2,17 +2,17 @@ param([string]$ConfigManagerPath = '', [string]$ArduinoJsonInclude = '')
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if (!$ConfigManagerPath) {
-    $ConfigManagerPath = @('ota','testesp','usb') | ForEach-Object { Join-Path $repo ".pio/wifi-coex-1.4.8/libdeps/$_/ESP32 Configuration Manager" } | Where-Object { Test-Path (Join-Path $_ 'library.json') } | Select-Object -First 1
+    $ConfigManagerPath = @('ota','testesp','usb') | ForEach-Object { Join-Path $repo ".pio/ble-reboot-1.4.12/libdeps/$_/ESP32 Configuration Manager" } | Where-Object { Test-Path (Join-Path $_ 'library.json') } | Select-Object -First 1
 }
 $cm = (Resolve-Path -LiteralPath $ConfigManagerPath).Path
 $manifest = Get-Content -LiteralPath (Join-Path $cm 'library.json') -Raw | ConvertFrom-Json
-if ($manifest.version -notin @('4.9.0','4.10.1')) { throw 'Runtime host tests require published CM 4.9.0 or frozen CM 4.10.1.' }
-if ($manifest.version -eq '4.10.1') {
-    & python -c 'import sys; from pathlib import Path; sys.dont_write_bytecode=True; sys.path.insert(0,sys.argv[1]); from prepare_cm_development import verify_development_package; verify_development_package(Path(sys.argv[2]),Path(sys.argv[3]))' (Join-Path $repo 'tools') (Join-Path $repo '.local/cm-wifi-coex-4.10.1-package') $cm
-    if ($LASTEXITCODE -ne 0) { throw 'Frozen CM 4.10.1 source verification failed.' }
+if ($manifest.version -notin @('4.9.0','4.10.5')) { throw 'Runtime host tests require published CM 4.9.0 or frozen CM 4.10.5.' }
+if ($manifest.version -eq '4.10.5') {
+    & python -c 'import sys; from pathlib import Path; sys.dont_write_bytecode=True; sys.path.insert(0,sys.argv[1]); from prepare_cm_development import verify_development_package; verify_development_package(Path(sys.argv[2]),Path(sys.argv[3]))' (Join-Path $repo 'tools') (Join-Path $repo '.local/cm-ble-reboot-4.10.5-final-package') $cm
+    if ($LASTEXITCODE -ne 0) { throw 'Frozen CM 4.10.5 source verification failed.' }
 }
 if (!$ArduinoJsonInclude) {
-    $candidates = @('.pio/wifi-coex-1.4.8/libdeps/ota/ArduinoJson/src', '.pio/wifi-coex-1.4.8/libdeps/testesp/ArduinoJson/src', '.pio/registry-settings/libdeps/usb/ArduinoJson/src')
+    $candidates = @('.pio/ble-reboot-1.4.12/libdeps/ota/ArduinoJson/src', '.pio/ble-reboot-1.4.12/libdeps/testesp/ArduinoJson/src', '.pio/ble-reboot-1.4.12/libdeps/usb/ArduinoJson/src', '.pio/registry-settings/libdeps/usb/ArduinoJson/src')
     $ArduinoJsonInclude = $candidates | ForEach-Object { Join-Path $repo $_ } | Where-Object { Test-Path (Join-Path $_ 'ArduinoJson.h') } | Select-Object -First 1
 }
 if (!$ArduinoJsonInclude -or !(Test-Path (Join-Path $ArduinoJsonInclude 'ArduinoJson.h'))) { throw 'Build usb first or supply ArduinoJsonInclude.' }
