@@ -1,7 +1,8 @@
 # SolarBatteryTelemetry - Project Information
 
-Date: 2026-10-15 (Europe/Berlin)
-Current checkpoint: JBD BMS and passive SmartSolar readout are implemented, installed and confirmed by the owner. Firmware remains 0.3.0 by request. The build uses local CM 4.6.0 with still-uncommitted BMS transport additions; see readme.md for the explicit reproduction limitation.
+Original record date: 2026-10-15 (Europe/Berlin). Battery specifications below
+were updated on 2026-10-31; see readme.md for current firmware/build status.
+Historical checkpoint: JBD BMS and passive SmartSolar readout are implemented, installed and confirmed by the owner. Firmware remains 0.3.0 by request. The build uses local CM 4.6.0 with still-uncommitted BMS transport additions; see readme.md for the explicit reproduction limitation.
 
 Historical installed checkpoint: the earlier 0.3.0 MQTT/channel preparation evidence is retained in docs/acceptance/2026-10-15-mqtt-preparation-0.3.0.md. Current bounded device acceptance is in docs/BMS.md.
 
@@ -45,9 +46,11 @@ retained in docs/ble-smoke-test.md.
 ## Hardware and reported installation
 
 - PV array: 1.8 kWp.
-- Newly installed battery: approximately 5 kWh (owner-reported). Exact battery
-  model, chemistry, and nominal voltage remain unknown. Screenshot evidence
-  identifies a 14S BMS and the Overkill Solar app; see the evidence below.
+- Battery specifications supplied by the owner on 2026-10-31: 50.4 V nominal,
+  114 Ah, 14S40P LG M29 lithium-ion (560 physical cells), approximately 5.75 kWh
+  nominal energy, BMS label 60 A, and Ri: 30 mΩ. The marking `11.19` probably
+  means November 2019. See [the battery record](docs/BATTERY.md) for derived
+  values, evidence limits, and the difference from the BMS-reported capacity.
 - Solar charger: Victron SmartSolar MPPT 150/35, product SCC115035210,
   confirmed by the label photo. Firmware remains pending.
 - Owner enabled broadcast-style Bluetooth readout on the charger. Its temporary

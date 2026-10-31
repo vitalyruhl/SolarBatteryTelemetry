@@ -34,12 +34,13 @@ public:
  void setRefreshInterval(uint32_t ms){refreshMs_=ms<5000?5000:ms>3600000?3600000:ms;}
  void clearResult(){slots_[3]={};std::memset(payload(3),0,capacity(3));}
  void onConnected(){clearResult();for(auto& slot:slots_)slot.dirty=slot.valid;retry_=false;refreshStarted_=false;}
- void tick(uint32_t now,const char* root,Transport& wire){
+ // mode 1 prioritizes control/results, mode 2 leaves those for the urgent path.
+ void tick(uint32_t now,const char* root,Transport& wire,unsigned mode=0){
   if(!wire.connected()||(retry_&&uint32_t(now-retryAt_)<250))return;retry_=false;
   if(!refreshStarted_){refreshStarted_=true;refreshAt_=now;}
   else if(uint32_t(now-refreshAt_)>=refreshMs_){refreshAt_=now;for(auto& slot:slots_)slot.dirty=slot.valid;}
   constexpr const char* suffixes[]={"bms/health","victron/health","bms/control","bms/control/result","bms/permissions/acknowledged"};
-  for(unsigned i=0;i<5;++i){const auto index=(cursor_+i)%5;auto& slot=slots_[index];if(!slot.dirty)continue;
+  for(unsigned i=0;i<5;++i){const auto index=(cursor_+i)%5;if((mode==1&&index<2)||(mode==2&&index>=2))continue;auto& slot=slots_[index];if(!slot.dirty)continue;
    char topic[topicLimit+1];if(!buildTopic(root,suffixes[index],topic,sizeof(topic)))return;
    if(wire.publish(topic,payload(index),index!=3)){slot.dirty=false;cursor_=(index+1)%5;}
    else {retry_=true;retryAt_=now;}return;

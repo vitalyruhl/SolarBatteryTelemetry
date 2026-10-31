@@ -18,7 +18,9 @@ The collector does not publish Home Assistant discovery configuration. Update th
 
 ## Fixed channels
 
-All 26 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained except for the Victron error and daily-yield scalars described in the 1.4.0 display-history section. The publish interval limits ordinary value updates to at most once per 5 seconds (or the configured interval when longer); it is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. At most four normal publications are attempted per policy tick, with a finite cursor and a 250 ms admission retry. A pending old-root retirement can add three sends before that normal budget; a root transition or configuration disconnect retires at most two advertised roots (six sends). CM's independent automatic online/System-Info messages are outside this preparation budget. A failed item does not advance its field cache or mark the snapshot delivered. Already accepted fields keep their cache across partial failures; retries wait at least 250 ms, including when a source transition replaces the pending snapshot. The fixed cache holds one `Value` per channel and a bitmask, using scalar serialization for equality and validity transitions, plus numeric deadbands for valid real measurements. There is no historical sample backlog in the live publisher. The separate display-history publisher may add one MQTT admission per loop and keeps only two last-valid fields.
+All 26 descriptors, labels, units, type/support names, state vocabulary and reserved command names are referenced by the production runtime and serializer. There are no per-field editable topics or allocated setting objects. Telemetry is non-retained except for the Victron error and daily-yield scalars described in the 1.4.0 display-history section. The configured interval governs idle scalar cycles; changed scalar fields remain immediately cursor-eligible, including actual MOS propagation. Cell-array millivolt deltas separately enforce that interval (at least five seconds). It is not a heartbeat. Each coherent sample compares fields against the last successful local admission. Real-valued measurements publish when their absolute change reaches 0.1 in the channel unit, except W channels which require 1 W. This applies to V (including cell minimum, maximum and spread), A, Ah, C, %, and Wh; future real-valued kW channels would use 0.1 kW. Small changes accumulate against the last sent value, not the previous sample. Boolean, enum, alarm and error changes retain exact change detection. Initial values, validity changes, reconnect replay and source restoration bypass the numeric deadband. Payloads retain their existing significant-digit precision; this policy does not round measurements. Between full refreshes, unchanged samples and absent sources emit no telemetry messages. Reconnect or root changes replay metadata and all currently valid fields; source availability changes publish availability/capabilities promptly, and restoration replays that source's valid fields even when unchanged from its previous connection. Ordinary application publications share one actual wire attempt per elapsed 100 ms grant, without catch-up credit. Six owners share a rotating cursor: scalars, cells, source health, display history, panic evidence and runtime diagnostics. Empty owners are skipped in the same grant. The finite scalar snapshot cursor advances one step per visit; changing early fields cannot starve late fields or cells. Failed admissions preserve caches and retry after 250 ms (panic report: 5 seconds, at most 12 attempts per root). Full-refresh packets are spread through these grants. The default remains 60 seconds; persisted settings, including 100 seconds, win.
+
+Urgent control status/results bypass ordinary pacing. Root/endpoint retirement may add up to six scalar availability/status tombstones and one panic tombstone. Changed source availability precedes scalar values. CM automatic online/System-Info publication is independent. This is an application packet-admission bound, **not a total TCP wall-time bound**: underlying synchronous calls may block. OTA is checked at the loop and final wire boundary; disabled MQTT sends no ordinary application packets. A six-owner host test under continuous scalar changes delivered the initial last scalar at 3.7 seconds and its forced refresh 3.478 seconds after becoming due. This is host evidence, not production timing.
 
 | Source | Leaf | Type | Unit / meaning |
 | --- | --- | --- | --- |
@@ -255,3 +257,51 @@ Single-direction commands use only `state`, `request_id`, `session`, `expires_at
 Changed scalar data starts publication on the next bounded cycle without waiting for the delta interval. An in-progress snapshot completes so continuously changing early channels cannot starve later MOS channels. Existing deadbands remain; complete refresh (default 60 seconds, configurable 5-3600) republishes valid status, health, scalar measurements and current-session result. Status never generates a command. Results are non-retained; each collector/MQTT session starts with `idle: no_request`.
 
 The [MQTT include](home-assistant-bms-controls.yaml) and separate [template gate include](home-assistant-bms-gate.yaml) retain existing entity identifiers. HA is non-optimistic and never retries a request in response to status. Actual-state switches remain visible while the common gate is off or control is busy; the backend rejects all disabled, stale, concurrent or debounced commands. A requested value may revert to actual readback; the operator can explicitly retry after the transaction ends.
+
+
+## Coherent cell array (1.5.0)
+
+`<root>/bms/cells` is a bounded non-retained JSON packet independent of the 26
+scalar channels and their 32-bit cache. Fields are `available`, `source`
+(`jbd_03_04`), `sample_sequence`, `sample_age_ms`, `received_at` and `cells_mv`.
+The array contains exactly 14 integer millivolt readings in JBD register order.
+Only a complete checked BasicInfo/CellInfo pair advances the sequence. Partial
+or interrupted cycles cannot mix cell values. Missing/stale data emits
+`available:false,cells_mv:null`, once per transition plus refresh.
+
+`sample_age_ms` is elapsed time since acquisition, recalculated at publication,
+retry and refresh. `received_at` is acquisition Unix seconds inferred from a
+valid clock and that sample's age, captured once when observed. It stays null
+when that clock is unavailable; uptime never substitutes for UTC. Unchanged
+arrays suppress publication even when acquisition sequence advances. Any exact
+millivolt change becomes eligible after the configured minimum interval (at
+least five seconds). Restoration, reconnect/root replay and forced refresh
+bypass that interval. Failed admissions never advance the sent cache. Raw
+storage is 14 uint16_t values in each completed sample, not generic double fields.
+
+[Additive HA entities](home-assistant-bms-cells.yaml) require collector, BMS and
+same-packet cell availability. Cells expose volts with three display decimals.
+Only the separate sequence entity carries changing acquisition attributes.
+There is no `expire_after` for unchanged values: source availability owns
+expiry. The firmware does not publish HA discovery.
+
+## Historical panic and runtime evidence (1.5.0)
+
+`<root>/Diagnostics/Panic` retains the bounded boot capture as
+`kind:historical_stored_panic`: an existing dump, not a newly observed crash.
+No crash timestamp is invented. Same-broker root changes clear the old retained
+topic with an empty retained payload before delivering under the new root.
+Configuration disable/reconnect attempts cleanup before disconnect; cleanup of
+an unreachable broker cannot be guaranteed. Old-endpoint tombstones never go
+to a new broker. No dump bytes, credentials or sessions are added. The isolated
+test profile stays under `SBTTest/COM8`; OTA/disabled publication is fenced.
+
+`<root>/Diagnostics/Runtime` is non-retained, sampled in the application loop
+every 30 seconds and replayed on reconnect/root/full refresh. Numeric fields:
+`uptime_ms` (sample uptime), `loop_stack_min_free_bytes`, `heap_free_bytes`,
+`heap_largest_free_block_bytes`, `heap_min_free_bytes`. Heap values use
+`MALLOC_CAP_DEFAULT`; stack and heap minima are lifetime low watermarks, not
+estimates of the previous crash. The installed ESP-IDF task.h explicitly
+defines `uxTaskGetStackHighWaterMark` in bytes, unlike vanilla FreeRTOS; no
+word-to-byte multiplier is applied. No Live page, one-second string log or new
+global allocator hook is enabled by this change.

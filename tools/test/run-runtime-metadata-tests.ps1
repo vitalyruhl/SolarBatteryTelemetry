@@ -2,7 +2,7 @@ param([string]$ConfigManagerPath = '', [string]$ArduinoJsonInclude = '')
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if (!$ConfigManagerPath) {
-    $ConfigManagerPath = @('ota','testesp','usb') | ForEach-Object { Join-Path $repo ".pio/ble-reboot-1.4.12/libdeps/$_/ESP32 Configuration Manager" } | Where-Object { Test-Path (Join-Path $_ 'library.json') } | Select-Object -First 1
+    $ConfigManagerPath = @('ota','testesp','usb') | ForEach-Object { Join-Path $repo ".pio/cell-telemetry-1.5.0/libdeps/$_/ESP32 Configuration Manager" } | Where-Object { Test-Path (Join-Path $_ 'library.json') } | Select-Object -First 1
 }
 $cm = (Resolve-Path -LiteralPath $ConfigManagerPath).Path
 $manifest = Get-Content -LiteralPath (Join-Path $cm 'library.json') -Raw | ConvertFrom-Json
@@ -12,7 +12,7 @@ if ($manifest.version -eq '4.10.5') {
     if ($LASTEXITCODE -ne 0) { throw 'Frozen CM 4.10.5 source verification failed.' }
 }
 if (!$ArduinoJsonInclude) {
-    $candidates = @('.pio/ble-reboot-1.4.12/libdeps/ota/ArduinoJson/src', '.pio/ble-reboot-1.4.12/libdeps/testesp/ArduinoJson/src', '.pio/ble-reboot-1.4.12/libdeps/usb/ArduinoJson/src', '.pio/registry-settings/libdeps/usb/ArduinoJson/src')
+    $candidates = @('.pio/cell-telemetry-1.5.0/libdeps/ota/ArduinoJson/src', '.pio/cell-telemetry-1.5.0/libdeps/testesp/ArduinoJson/src', '.pio/cell-telemetry-1.5.0/libdeps/usb/ArduinoJson/src', '.pio/registry-settings/libdeps/usb/ArduinoJson/src')
     $ArduinoJsonInclude = $candidates | ForEach-Object { Join-Path $repo $_ } | Where-Object { Test-Path (Join-Path $_ 'ArduinoJson.h') } | Select-Object -First 1
 }
 if (!$ArduinoJsonInclude -or !(Test-Path (Join-Path $ArduinoJsonInclude 'ArduinoJson.h'))) { throw 'Build usb first or supply ArduinoJsonInclude.' }

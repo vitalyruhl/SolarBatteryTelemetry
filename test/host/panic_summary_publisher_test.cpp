@@ -7,7 +7,7 @@
 struct Wire:telemetry::Transport {
  bool online=false,accept=false;unsigned calls=0;std::string topic,payload;
  bool connected()const override{return online;}
- bool publish(const char* t,const char* p,bool retain)override{assert(!retain);++calls;topic=t;payload=p;return accept;}
+ bool publish(const char* t,const char* p,bool retain)override{assert(retain);++calls;topic=t;payload=p;return accept;}
  void disconnect()override{}void configure(const char*)override{}
 };
 int main(){
@@ -24,6 +24,12 @@ int main(){
  wire.accept=true;p.tick(uint32_t(0xffffff00u+5000u),"SBTTest/COM8",wire);assert(wire.calls==2);
  wire.online=false;p.tick(10000,"SBTTest/COM8",wire);wire.online=true;
  p.tick(20000,"SBTTest/COM8",wire);assert(wire.calls==2); // No replay after reconnect.
+ assert(wire.payload.find("historical_stored_panic")!=std::string::npos&&wire.payload.find("timestamp")==std::string::npos);
+ assert(p.retireRoot(wire));assert(wire.calls==3&&wire.payload.empty()&&wire.topic=="SBTTest/COM8/Diagnostics/Panic");
+ p.tick(20001,"SBTTest/COM8/next",wire);assert(wire.calls==4&&!wire.payload.empty());
+ wire.accept=false;assert(!p.retireRoot(wire,20003));wire.accept=true;
+ const auto cleanupAttempts=wire.calls;assert(!p.retireRoot(wire,20252)&&wire.calls==cleanupAttempts);assert(p.retireRoot(wire,20253));
+ p.abandonEndpoint();const auto abandoned=wire.calls;p.tick(20002,"SBTTest/COM8/third",wire);assert(wire.calls==abandoned+1);
  PanicSummaryPublisher fail;assert(fail.capture(s));wire.accept=false;wire.calls=0;
  for(unsigned i=0;i<30;++i)fail.tick(i*5000,"SBTTest/COM8",wire);
  assert(wire.calls==12);

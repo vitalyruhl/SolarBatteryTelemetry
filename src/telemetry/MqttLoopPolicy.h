@@ -11,9 +11,9 @@ inline CleanupResult disconnectForReconfigure(Publisher& publisher,Transport& wi
  return CleanupResult::DeferredSameEndpoint;
 }
 template<class Paused,class NetworkLoop>
-void runPreparedMqttLoop(Publisher& publisher,uint32_t now,Transport& wire,bool configured,Paused paused,NetworkLoop networkLoop){
+void runPreparedMqttLoop(Publisher& publisher,uint32_t now,Transport& wire,bool configured,Paused paused,NetworkLoop networkLoop,unsigned stepBudget=4){
  if(paused()){publisher.setPaused(true);return;}
- publisher.setPaused(false);publisher.tick(now,wire);
+ publisher.setPaused(false);publisher.tick(now,wire,stepBudget);
  // Starting may arrive from Async OTA while the preceding bounded publication tick runs.
  if(configured&&!paused())networkLoop();
 }

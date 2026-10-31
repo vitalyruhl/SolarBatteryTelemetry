@@ -3,6 +3,9 @@
 #include <ConfigManager.h>
 #include "runtime/AppRuntimeMetadata.h"
 #include "diagnostics/PanicSummaryPublisher.h"
+#include "diagnostics/RuntimePublisher.h"
+#include <esp_heap_caps.h>
+#include <freertos/task.h>
 #include <mqtt/MQTTManager.h>
 #include <atomic>
 #include "MqttConfigMailbox.h"
@@ -10,6 +13,8 @@
 #include "MqttUiSettings.h"
 #include "StatusPublisher.h"
 #include "VictronHistoryPublisher.h"
+#include "CellPublisher.h"
+#include "PacedPublication.h"
 #include "BmsCommandEnvelope.h"
 #include "bms/BmsReadout.h"
 #include <ctime>
@@ -20,8 +25,9 @@ class MqttService final : public Transport {
  cm::MQTTManager& mqtt_=cm::MQTTManager::instance();
  ConfigMailbox mailbox_;
  MqttConfig desired_{};uint32_t seen_=0;
- Publisher publisher_;VictronHistoryPublisher victronHistory_;
+ Publisher publisher_;VictronHistoryPublisher victronHistory_;CellPublisher cells_;PacedPublication paced_;
  sbt::diagnostics::PanicSummaryPublisher panicSummary_;
+ sbt::diagnostics::RuntimePublisher runtime_;
  StatusPublisher statuses_;CommandSession session_;bms::Readout* bms_=nullptr;
  bool subscribed_=false;uint32_t subscribeAt_=0,lastResultSequence_=0;
  struct Health {bool initialized=false,available=false;const char* reason="unknown";uint32_t sentAt=0,receivedAt=0,sequence=0;} health_[2];
@@ -112,7 +118,7 @@ public:
   // Deliberately no MQTTManager::attach(): it would expose loop-owned settings to AsyncWeb writes.
   // Standalone public settings/begin/loop retain System-Info/ESP and /WiFi conventions.
   mqtt_.setBufferSize(sbt::diagnostics::mqttBufferBytes);mqtt_.setRetryInterval(10000);mqtt_.setMaxRetries(10);mqtt_.setKeepAlive(30);
-  mqtt_.onMQTTConnect([this](){publisher_.onConnected();victronHistory_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
+  mqtt_.onMQTTConnect([this](){publisher_.onConnected();victronHistory_.onConnected();cells_.onConnected();runtime_.onConnected();statuses_.onConnected();newSession();subscribeCommands(millis());});
   mqtt_.onMQTTDisconnect([this](){session_.clear();subscribed_=false;if(bms_)bms_->cancelCommands();});
   mqtt_.onMessage([this](const char* topic,const byte* payload,unsigned int length){message(topic,payload,length);});
   installCallbacks();
@@ -142,10 +148,11 @@ public:
   captureInitial();
  }
  void pauseForOta(bool value){otaPaused_.store(value);}
- void updateBms(const Value* values,bool available,const char* reason,uint32_t receivedAt,uint32_t sequence,uint32_t now){
-  health(0,available,reason,receivedAt,sequence,now);
-  for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Bms)publisher_.setValue(i,available?values[i]:Value{});
-  publisher_.setSourceAvailable(Source::Bms,available);
+ void updateBms(const bms::Snapshot& sample,const char* reason,uint32_t now){
+  cells_.observe(sample,now,static_cast<int64_t>(std::time(nullptr)));
+  health(0,sample.available,reason,sample.receivedAt,sample.sequence,now);
+  for(std::size_t i=0;i<channelCount;++i)if(channels[i].source==Source::Bms)publisher_.setValue(i,sample.available?sample.values[i]:Value{});
+  publisher_.setSourceAvailable(Source::Bms,sample.available);
  }
  void updateVictron(const Value* values,bool available,const char* reason,uint32_t receivedAt,uint32_t now){
   victronHistory_.observe(values,available,receivedAt,now,static_cast<int64_t>(std::time(nullptr)));
@@ -165,22 +172,39 @@ public:
     std::strcmp(desired_.username,next.username)||std::strcmp(desired_.password,next.password)||std::strcmp(desired_.clientId,next.clientId);
    desired_=next;
    if(reconnect){
+    const bool panicRetired=panicSummary_.retireRoot(*this,now);
+    if(endpointChanged){if(!panicRetired)oldEndpointUnconfirmed_=true;panicSummary_.abandonEndpoint();}
     const auto cleanup=disconnectForReconfigure(publisher_,*this,endpointChanged);
     if(cleanup==CleanupResult::UnconfirmedOldEndpoint)oldEndpointUnconfirmed_=true;
     // DeferredSameEndpoint remains in Publisher; disable never waits indefinitely for the broker.
    }
    auto& live=mqtt_.settings();
    live.enableMQTT.set(next.enabled);mqtt_.setServer(next.server,next.port);mqtt_.setCredentials(next.username,next.password);mqtt_.setClientId(next.clientId);
-   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);statuses_.setRefreshInterval(next.fullRefreshMs);
+   live.publishIntervalSec.set(next.publishMs/1000.0f);live.listenIntervalMs.set(next.listenMs);publisher_.setInterval(next.publishMs);publisher_.setRefreshInterval(next.fullRefreshMs);statuses_.setRefreshInterval(next.fullRefreshMs);cells_.setInterval(next.publishMs);cells_.setRefreshInterval(next.fullRefreshMs);
+   runtime_.setRefreshInterval(next.fullRefreshMs);
    if(reconnect&&next.enabled)configure(publisher_.root());
   }
+  if(std::strcmp(publisher_.root(),desired_.root))panicSummary_.retireRoot(*this,now);
   publisher_.requestRoot(desired_.root,std::strlen(desired_.root));
   // Resolve root transitions before CM's automatic System-Info publication.
   runPreparedMqttLoop(publisher_,now,*this,desired_.enabled&&desired_.server[0],
-   [this](){return otaPaused_.load();},[this](){mqtt_.loop();});
-  panicSummary_.tick(now,publisher_.root(),*this);
-  controlStatus();statuses_.tick(now,publisher_.root(),*this);
-  victronHistory_.tick(now,publisher_.root(),*this);
+   [this](){return otaPaused_.load();},[this](){mqtt_.loop();},0);
+  if(otaPaused_.load()||!desired_.enabled||!desired_.server[0]){updateView();return;}
+  if(runtime_.due(now)){
+   multi_heap_info_t heap{};heap_caps_get_info(&heap,MALLOC_CAP_DEFAULT);
+   // ESP-IDF task.h defines this high-water value in bytes, unlike vanilla FreeRTOS.
+   runtime_.observe(now,uxTaskGetStackHighWaterMark(nullptr),heap.total_free_bytes,heap.largest_free_block,heap.minimum_free_bytes);
+  }
+  controlStatus();statuses_.tick(now,publisher_.root(),*this,1);
+  paced_.tick(now,*this,[this,now](unsigned slot,Transport& wire){
+   if(otaPaused_.load())return;
+   if(slot==0)publisher_.tick(now,wire,1);
+   else if(slot==1)cells_.tick(now,publisher_.root(),wire);
+   else if(slot==2)statuses_.tick(now,publisher_.root(),wire,2);
+   else if(slot==3)victronHistory_.tick(now,publisher_.root(),wire);
+   else if(slot==4)panicSummary_.tick(now,publisher_.root(),wire);
+   else runtime_.tick(now,publisher_.root(),wire);
+  });
   updateView();
  }
  bool connected() const override{return mqtt_.isConnected();}
