@@ -77,7 +77,7 @@ public:
  bool retirementPending() const{return retiring_[0]!=0;}
  void abandonOldEndpoint(){retiring_[0]=0;retireCursor_=0;advertised_=false;}
 
- void tick(uint32_t now,Transport& wire) {
+ void tick(uint32_t now,Transport& wire,unsigned stepBudget=4) {
   if(paused_)return;
   if(retry_&&static_cast<uint32_t>(now-retryAt_)<250)return;
   retry_=false;
@@ -103,7 +103,7 @@ public:
   if(!pending_)resetCycle();
   // Four bounded cursor steps (at most four admissions). Skips never allocate or send.
   // Keep successful values only; failed admissions retain this snapshot and retry cursor.
-  for(unsigned budget=0;budget<4&&cursor_<channelCount+5;++budget) {
+  for(unsigned budget=0;budget<stepBudget&&cursor_<channelCount+5;++budget) {
    bool ok=false;
    if(cursor_<5) {
     const auto bit=static_cast<uint8_t>(1u<<cursor_);

@@ -45,3 +45,19 @@ Page index, selected BMS layout, selected metadata and settings returned complet
 The OTA sender authenticated and sent the image, but timed out waiting for the final response. Its installed espota.py then raised a NameError in its exception handler. The device rebooted into the new JBD-enabled firmware and returned measurements; no upload retry was performed. No global PlatformIO tool was modified.
 
 The final observation covered 10 snapshots over 95.6 seconds. Both sources remained available and MQTT stayed online in every snapshot; uptime increased continuously, queue drops stayed zero and the reconnect counter did not increase. A historical startup timeout (-1005) and two connection attempts remained recorded; this is not a zero-error startup claim.
+
+
+## Fourteen-cell telemetry (1.5.0)
+
+The 14 voltage channels are series-group measurements of a 14S40P LG M29 Li-ion
+pack (560 physical cells), not 560 individually measured cells. The pack label
+rates 114 Ah; the separately reported BMS full-capacity setting remains
+telemetry/configuration evidence. See [battery label evidence](BATTERY.md).
+
+Every completed checked 03/04 pair retains 14 raw uint16_t millivolt readings
+alongside scalar minimum/maximum/spread. Partial, wrong-length, out-of-range or
+interrupted frames cannot replace any part of the completed array. Expiry clears
+its validity, and MQTT never represents invalid cells as zero or live. Exact mV
+deltas use independent fixed storage and shared elapsed-time pacing. See
+[MQTT](MQTT.md#coherent-cell-array-150) and [HA entities](home-assistant-bms-cells.yaml).
+No MOS command, automatic recovery or protection threshold changed.

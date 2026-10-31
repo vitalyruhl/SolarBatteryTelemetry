@@ -196,7 +196,7 @@ void loop() {
     telemetryMqtt.updateVictron(sample.values,sample.available,sample.reason,sample.receivedMs,millis());
 
     const auto battery=bmsReadout.snapshot();
-    telemetryMqtt.updateBms(battery.values.data(),battery.available,bmsReadout.reason(),battery.receivedAt,battery.sequence,millis());
+    telemetryMqtt.updateBms(battery,bmsReadout.reason(),millis());
     telemetryMqtt.loop(millis());
 
     updateStatusLED();

@@ -28,7 +28,7 @@ public:
   out.reg=bytes_[1];out.status=bytes_[2];out.size=length;std::memcpy(out.payload.data(),bytes_.data()+4,length);return true;
  }
 };
-struct Snapshot {std::array<telemetry::Value,telemetry::channelCount> values{};bool available=false;uint32_t receivedAt=0,sequence=0;};
+struct Snapshot {std::array<telemetry::Value,telemetry::channelCount> values{};std::array<uint16_t,14> cellsMv{};bool cellsValid=false,available=false;uint32_t receivedAt=0,sequence=0;};
 inline uint16_t u16(const uint8_t* p){return (uint16_t(p[0])<<8)|p[1];}
 class Cycle {
  Snapshot pending_{},published_{};bool basic_=false,have_=false;uint32_t basicAt_=0,publishedAt_=0,sequence_=0;
@@ -59,11 +59,12 @@ public:
   const bool ready=basic_&&uint32_t(now-basicAt_)<2000;basic_=false;
   if(!ready||f.size!=28)return false;
   uint16_t low=65535,high=0;
-  for(size_t i=0;i<14;++i){auto value=u16(p+2*i);if(!value||value>6000)return false;low=std::min(low,value);high=std::max(high,value);}
+  for(size_t i=0;i<14;++i){auto value=u16(p+2*i);if(!value||value>6000)return false;pending_.cellsMv[i]=value;low=std::min(low,value);high=std::max(high,value);}
+  pending_.cellsValid=true;
   pending_.values[11]={true,low*.001};pending_.values[12]={true,high*.001};pending_.values[13]={true,(high-low)*.001};
   pending_.receivedAt=now;pending_.sequence=++sequence_;published_=pending_;publishedAt_=now;have_=true;return true;
  }
  Snapshot snapshot(uint32_t now,uint32_t timeoutMs=30000) const {auto result=published_;result.available=have_&&uint32_t(now-publishedAt_)<timeoutMs;
-  if(!result.available)result.values={};return result;}
+  if(!result.available){result.values={};result.cellsValid=false;}return result;}
 };
 }

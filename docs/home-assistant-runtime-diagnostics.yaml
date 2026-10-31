@@ -1,0 +1,70 @@
+# Reference definitions; these entities were commissioned through MQTT discovery.
+# Do not also install duplicate YAML definitions for the same unique IDs.
+mqtt:
+  sensor:
+    - name: "SBT Loop Stack Minimum Free"
+      unique_id: sbt_loop_stack_min_free_bytes
+      state_topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+      value_template: "{{ value_json.loop_stack_min_free_bytes if value_json.loop_stack_min_free_bytes is number else none }}"
+      device_class: data_size
+      state_class: measurement
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      availability_mode: all
+      availability:
+        - topic: "SolarBatteryTelemetry/status"
+          payload_available: "online"
+          payload_not_available: "offline"
+        - topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+          value_template: "{{ 'online' if value_json.loop_stack_min_free_bytes is number else 'offline' }}"
+      device: &runtime_device
+        identifiers: [sbt_runtime_diagnostics]
+        name: "SBT Runtime Diagnostics"
+    - name: "SBT Heap Free"
+      unique_id: sbt_heap_free_bytes
+      state_topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+      value_template: "{{ value_json.heap_free_bytes if value_json.heap_free_bytes is number else none }}"
+      device_class: data_size
+      state_class: measurement
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      availability_mode: all
+      availability:
+        - topic: "SolarBatteryTelemetry/status"
+          payload_available: "online"
+          payload_not_available: "offline"
+        - topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+          value_template: "{{ 'online' if value_json.heap_free_bytes is number else 'offline' }}"
+      device: *runtime_device
+    - name: "SBT Heap Largest Free Block"
+      unique_id: sbt_heap_largest_free_block_bytes
+      state_topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+      value_template: "{{ value_json.heap_largest_free_block_bytes if value_json.heap_largest_free_block_bytes is number else none }}"
+      device_class: data_size
+      state_class: measurement
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      availability_mode: all
+      availability:
+        - topic: "SolarBatteryTelemetry/status"
+          payload_available: "online"
+          payload_not_available: "offline"
+        - topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+          value_template: "{{ 'online' if value_json.heap_largest_free_block_bytes is number else 'offline' }}"
+      device: *runtime_device
+    - name: "SBT Heap Minimum Free"
+      unique_id: sbt_heap_min_free_bytes
+      state_topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+      value_template: "{{ value_json.heap_min_free_bytes if value_json.heap_min_free_bytes is number else none }}"
+      device_class: data_size
+      state_class: measurement
+      unit_of_measurement: "B"
+      entity_category: diagnostic
+      availability_mode: all
+      availability:
+        - topic: "SolarBatteryTelemetry/status"
+          payload_available: "online"
+          payload_not_available: "offline"
+        - topic: "SolarBatteryTelemetry/Diagnostics/Runtime"
+          value_template: "{{ 'online' if value_json.heap_min_free_bytes is number else 'offline' }}"
+      device: *runtime_device

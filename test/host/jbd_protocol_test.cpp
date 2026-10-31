@@ -31,6 +31,13 @@ int main(){
  Cycle cycle;cycle.reset();assert(cycle.accept(decoded,100));assert(!cycle.snapshot(100).available);
  for(auto v:b)if(parser.push(v,decoded))assert(cycle.accept(decoded,110));
  auto s=cycle.snapshot(110);assert(s.available);near(s.values[3].number,47.22);near(s.values[4].number,-9.2);near(s.values[5].number,-434.424);
+ assert(s.cellsValid);for(size_t i=0;i<14;++i)assert(s.cellsMv[i]==3300+i*10);
+ // A rejected/partial next pair cannot replace any cell of the completed sample.
+ Frame partial;partial.reg=3;partial.size=27;std::copy(basic.begin(),basic.end(),partial.payload.begin());assert(cycle.accept(partial,120));
+ partial.reg=4;partial.size=26;assert(!cycle.accept(partial,121));
+ assert(cycle.snapshot(121).cellsMv==s.cellsMv&&cycle.snapshot(121).sequence==s.sequence);
+ cycle.interrupt();partial.reg=4;partial.size=28;assert(!cycle.accept(partial,122));
+ assert(!cycle.snapshot(30110).cellsValid);
  assert(s.values[0].number==0&&s.values[1].number==1);near(s.values[6].number,1.4);near(s.values[7].number,131.25);
  near(s.values[10].number,14.8);near(s.values[11].number,3.3);near(s.values[12].number,3.43);near(s.values[13].number,.13);assert(s.values[14].number==0x123);
  const auto minimum=channel("bms/temperature_min_c"), protection=channel("bms/protection");

@@ -23,7 +23,7 @@ struct Service {
  struct Statuses {std::string payload[2];void set(unsigned i,const char* p,bool){payload[i]=p;}} statuses_;
  #include "production_health.inc"
  void updateVictron(const std::array<int,26>&,bool a,const char* r,uint32_t at,uint32_t now){health(1,a,r,at,0,now);}
- void updateBms(const int*,bool a,const char* r,uint32_t at,uint32_t seq,uint32_t now){health(0,a,r,at,seq,now);}
+ void updateBms(const Sample& s,const char* r,uint32_t now){health(0,s.available,r,s.receivedAt,s.sequence,now);}
  void loop(uint32_t){}
 } telemetryMqtt;
 void updateStatusLED(){}

@@ -20,7 +20,7 @@ def registry_cm_path() -> Path:
     supplied = None
     if '--config-manager-path' in sys.argv:
         supplied = sys.argv[sys.argv.index('--config-manager-path') + 1]
-    candidates = [ROOT / '.pio/ble-reboot-1.4.12/libdeps' / environment / 'ESP32 Configuration Manager'
+    candidates = [ROOT / '.pio/cell-telemetry-1.5.0/libdeps' / environment / 'ESP32 Configuration Manager'
                   for environment in ('ota', 'testesp', 'usb')]
     cm = Path(supplied) if supplied else next((path for path in candidates if (path / 'library.json').is_file()), candidates[0])
     metadata = json.loads((cm / 'library.json').read_text(encoding='utf-8-sig'))

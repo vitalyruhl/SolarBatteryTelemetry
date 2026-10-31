@@ -1,0 +1,180 @@
+# Add under the existing mqtt: sensor: list; merge the existing mqtt key.
+# Individual cells intentionally have no changing shared JSON attributes.
+mqtt:
+  sensor:
+    - name: "SBT BMS Cell 01 Voltage"
+      unique_id: sbt_bms_cell_01_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[0] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: &sbt_cells_availability
+        - topic: SolarBatteryTelemetry/status
+          payload_available: online
+          payload_not_available: offline
+        - topic: SolarBatteryTelemetry/bms/availability
+          payload_available: available
+          payload_not_available: unavailable
+        - topic: SolarBatteryTelemetry/bms/cells
+          value_template: "{{ 'online' if value_json.available | default(false) else 'offline' }}"
+      device: &sbt_cells_device
+        identifiers: [sbt_8857218f664c_bms]
+    - name: "SBT BMS Cell 02 Voltage"
+      unique_id: sbt_bms_cell_02_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[1] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 03 Voltage"
+      unique_id: sbt_bms_cell_03_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[2] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 04 Voltage"
+      unique_id: sbt_bms_cell_04_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[3] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 05 Voltage"
+      unique_id: sbt_bms_cell_05_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[4] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 06 Voltage"
+      unique_id: sbt_bms_cell_06_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[5] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 07 Voltage"
+      unique_id: sbt_bms_cell_07_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[6] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 08 Voltage"
+      unique_id: sbt_bms_cell_08_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[7] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 09 Voltage"
+      unique_id: sbt_bms_cell_09_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[8] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 10 Voltage"
+      unique_id: sbt_bms_cell_10_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[9] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 11 Voltage"
+      unique_id: sbt_bms_cell_11_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[10] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 12 Voltage"
+      unique_id: sbt_bms_cell_12_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[11] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 13 Voltage"
+      unique_id: sbt_bms_cell_13_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[12] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: "SBT BMS Cell 14 Voltage"
+      unique_id: sbt_bms_cell_14_voltage
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ (value_json.cells_mv[13] | float / 1000) if value_json.available and value_json.cells_mv is sequence and value_json.cells_mv | count == 14 else none }}"
+      device_class: voltage
+      state_class: measurement
+      unit_of_measurement: V
+      suggested_display_precision: 3
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+    - name: SBT BMS Cells Sequence
+      unique_id: sbt_bms_cells_sequence
+      state_topic: SolarBatteryTelemetry/bms/cells
+      value_template: "{{ value_json.sample_sequence }}"
+      entity_category: diagnostic
+      availability_mode: all
+      availability: *sbt_cells_availability
+      device: *sbt_cells_device
+      json_attributes_topic: SolarBatteryTelemetry/bms/cells
+      json_attributes_template: >-
+        {{ {'sample_age_ms': value_json.sample_age_ms,
+            'received_at': value_json.received_at,
+            'source': value_json.source} | tojson }}

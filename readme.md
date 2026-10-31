@@ -1,6 +1,33 @@
 # SolarBatteryTelemetry
 
-## BLE-owned HTTP reboot preparation 1.4.12
+## Cell telemetry and paced diagnostics 1.5.0
+
+Production 1.5.0 was confirmed after the owner-authorized five-minute test on
+2026-10-31. See the [hardware gate](docs/acceptance/2026-10-31-cell-telemetry-hardware-gate.md)
+for actual readings and remaining stability limits.
+
+The compatible 1.5.0 feature adds all 14 checked BMS cell voltages on
+`bms/cells`, with shared source sequence, acquisition age and optional acquisition
+UTC. Exact millivolt changes use the existing minimum publication interval.
+Missing or expired arrays become unavailable. Ordinary application MQTT work
+shares one elapsed 100 ms grant across six fair owners. Urgent control results
+and lifecycle cleanup keep their own path. Live UI remains disabled; no
+automatic MOS operation was added.
+
+`Diagnostics/Panic` retains the bounded historical stored-dump report.
+`Diagnostics/Runtime` samples loop-stack minimum free bytes and default-heap
+free/largest/minimum bytes every 30 seconds without adding an allocator hook.
+Build-only checks do not establish device or multi-day stability. See
+[MQTT](docs/MQTT.md), [BMS](docs/BMS.md) and the additive
+[HA configuration](docs/home-assistant-bms-cells.yaml).
+
+The 14 BMS voltage channels measure the pack's 14 series groups, each containing
+40 parallel LG M29 Li-ion cells; they do not measure all 560 physical cells.
+See [battery label and capacity evidence](docs/BATTERY.md). The label's 114 Ah
+rating and the BMS-reported full-capacity value remain distinct; this feature
+does not silently change capacity or planning settings.
+
+## BLE-owned HTTP reboot baseline 1.4.12
 
 This patch selects the unpublished immutable CM 4.10.5 package at
 `file://.local/cm-ble-reboot-4.10.5-final-package`. Before starting the web server,
@@ -11,11 +38,11 @@ failure handling, native controller checks, and the eventual main-loop restart.
 The WiFi coexistence lease remains conservative until reboot. The task watchdog
 remains enabled; no BLE reinitialization is attempted after terminal shutdown.
 
-Build outputs and dependency copies use `.pio/ble-reboot-1.4.12`. The `testesp`
+Build outputs and dependency copies use `.pio/cell-telemetry-1.5.0`. The `testesp`
 profile enables bounded CM shutdown phase markers, excluded from `usb`; neither
 `usb` nor normal
-`testesp` enables deliberate panic injection. The stored-panic diagnostics,
-isolated test namespace and BMS control gates remain unchanged. The 1.4.11 BLE
+`testesp` enables deliberate panic injection. The isolated test namespace and
+BMS control gates remain unchanged. The 1.4.11 BLE
 self-OTA failed with a watchdog while the same image without BLE restarted
 normally. The initialized-BLE self-OTA and the separate production restart validation passed; see [the 1.4.12 acceptance report](docs/acceptance/2026-10-27-http-ota-ble-shutdown.md).
 Previous firmware and source freezes remain unchanged.
@@ -241,7 +268,7 @@ pio run -e ota
 
 ## Isolated COM8 profile
 
-`pio run -e testesp` builds a separate diagnostic artifact at `.pio/ble-reboot-1.4.12/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
+`pio run -e testesp` builds a separate diagnostic artifact at `.pio/cell-telemetry-1.5.0/testesp/firmware.bin`; retain its matching ELF. It initializes the BLE worker with empty BMS/Victron peers, uses DHCP, and hard-denies BMS gate/MOS requests independently of settings. All MQTT root transitions, commands, availability, history and System-Info use `SBTTest/COM8/...` with client ID `SBTTest-COM8-collector`. The application emits no HA discovery. MQTT endpoint/authentication can still come from persisted settings; set only this verified test board's endpoint/auth/enable settings from the existing private source when an older SIL broker configuration was inherited.
 
 The profile reports absent peers as unavailable. Empty-peer operation qualifies initialization and lifecycle only, not real BLE reception or physical control. The test profile does not modify the production binary. SBT retains synchronous legacy MQTT transport even with CM 4.10.1; it does not enable that library's optional bounded adapter. Device testing, OTA and restoration of the previous COM8 image require owner authorization and matching artifact evidence.
 

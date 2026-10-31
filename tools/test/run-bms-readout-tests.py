@@ -28,7 +28,7 @@ def main():
   victron=(ROOT/'src/victron/VictronReadout.h').read_text()
   validated=helper.between(victron,'class ValidatedText final','class Readout {')
   (out/'victron/VictronReadout.h').write_text('#pragma once\n#include <ConfigManager.h>\n#include "victron/VictronConfigMailbox.h"\nnamespace victron {\n'+validated+'\n}\n')
-  json=ROOT/'.pio/ble-smoke/libdeps/usb/ArduinoJson/src'
+  json=ROOT/'.pio/cell-telemetry-1.5.0/libdeps/usb/ArduinoJson/src'
   compiler=os.environ.get('SBT_HOST_CXX','C:/Program Files/LLVM/bin/clang++.exe')
   exe=out/'bms_readout_test.exe'
   command=[compiler,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-reorder-ctor','-Wno-unused-parameter']
