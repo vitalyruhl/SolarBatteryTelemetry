@@ -6,6 +6,11 @@ Production 1.5.0 was confirmed after the owner-authorized five-minute test on
 2026-10-31. See the [hardware gate](docs/acceptance/2026-10-31-cell-telemetry-hardware-gate.md)
 for actual readings and remaining stability limits.
 
+A later production panic matched an intentional Bluetooth controller assertion
+at `llm_util.c:215`. The exact rejected packet and trigger remain unproven; see
+the [matched ELF analysis](docs/acceptance/2026-10-31-controller-panic-1.5.0.md).
+No controller fix is claimed by 1.5.0.
+
 The compatible 1.5.0 feature adds all 14 checked BMS cell voltages on
 `bms/cells`, with shared source sequence, acquisition age and optional acquisition
 UTC. Exact millivolt changes use the existing minimum publication interval.
