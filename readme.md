@@ -1,5 +1,17 @@
 # SolarBatteryTelemetry
 
+## Bluetooth controller test candidate 1.5.1
+
+The separate `fix/esp32-bt-controller` candidate links Espressif's IDF4.4.7-specific
+controller0b40e99 from a hash-verified, worktree-local archive. Run
+`python tools/bt_controller.py --prepare` before building. The shared SDK remains
+unchanged, and post-link checks record the actual controller provenance.
+See the [candidate and rollback record](docs/acceptance/2026-10-31-bt-controller-candidate.md).
+The owner requested production testing immediately after the short bench gate;
+production1.5.1 is installed with a confirmed BLE-off recovery boot and RAM-only
+BLE activation. The initial real-device observation passed; long-term stability
+is unproven. Do not Save all during the recovery experiment.
+
 ## Cell telemetry and paced diagnostics 1.5.0
 
 Production 1.5.0 was confirmed after the owner-authorized five-minute test on

@@ -5,6 +5,14 @@
 #define SBT_ISOLATED_TEST_PROFILE 0
 #endif
 
+#ifndef SBT_CONTROLLER_SCAN_TEST
+#define SBT_CONTROLLER_SCAN_TEST 0
+#endif
+
+#if SBT_CONTROLLER_SCAN_TEST && !SBT_ISOLATED_TEST_PROFILE
+#error "Controller scan fixture requires the isolated test profile"
+#endif
+
 namespace sbt::testprofile {
 inline constexpr bool isolated = SBT_ISOLATED_TEST_PROFILE != 0;
 inline constexpr char root[] = "SBTTest/COM8";
