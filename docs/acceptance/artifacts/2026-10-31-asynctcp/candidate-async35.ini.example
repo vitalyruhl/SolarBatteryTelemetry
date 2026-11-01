@@ -1,0 +1,17 @@
+; Historical compile-compatibility candidate only; not an adopted product dependency.
+; Safe sections only. No copied private configuration, credentials, or upload endpoints.
+[env:compat_async35_usb]
+extends = env:usb
+lib_deps =
+    ${env.lib_deps}
+    ESP32Async/AsyncTCP@3.5.0
+lib_ignore =
+    AsyncTCP-esphome
+
+[env:compat_async35_ota]
+extends = env:ota
+lib_deps =
+    ${env.lib_deps}
+    ESP32Async/AsyncTCP@3.5.0
+lib_ignore =
+    AsyncTCP-esphome

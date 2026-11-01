@@ -1,0 +1,3 @@
+/host/.build/
+!historical/old-build.log
+!historical/stable-build.log

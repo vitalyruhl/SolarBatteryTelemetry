@@ -1,0 +1,59 @@
+{
+  "extraction": "Selected complete function bodies copied unchanged by signature from pinned upstream source. Platform, TCP transport, application callbacks, and task scheduling are host stubs. No source fixes are applied.",
+  "sources": {
+    "esphome": {
+      "commit": "27cb883234bcea25cb952deefc571d97b3c09b0f",
+      "sha256": "fb98241536d307cd5a03b4fc54f18687f6880b9051db561f7fc4da2bf70b8631",
+      "git_blob": "da8fc4940f186066d24674edd0bf31379e015f8b"
+    },
+    "esp32async-stable": {
+      "commit": "5bd9e2dbde8de5d0652e8e69565b8b561d866f18",
+      "sha256": "1fc2c601ab80c282f5db3fa6563a5036bb5b7c4de57e331d29aab5ce79650d5e",
+      "git_blob": "4108df3a098dae18ee82b0c561dc6f6b59ef94b4"
+    },
+    "esp32async": {
+      "commit": "02c90b8fb66bbcd55558cff6b1f81b395dc957f2",
+      "sha256": "0c3cd72300501c76cbc738e8ee4149ca5949f97f0c5fa4a5117586ddabaf9b81",
+      "git_blob": "3e6b36696e9da48da10407b3c3843644729bafe0"
+    }
+  },
+  "symbols": {
+    "old": [
+      "_init_async_event_queue",
+      "_send_async_event",
+      "_prepend_async_event",
+      "_get_async_event",
+      "_remove_events_with_arg",
+      "_handle_async_event",
+      "_tcp_clear_events",
+      "_tcp_connected",
+      "_tcp_poll",
+      "_tcp_recv",
+      "_tcp_sent",
+      "_tcp_error",
+      "_tcp_dns_found",
+      "_tcp_accept",
+      "AsyncClient::close",
+      "AsyncClient::_close"
+    ],
+    "stable": [
+      "_xor_shift_next",
+      "_free_event",
+      "_send_async_event",
+      "_prepend_async_event",
+      "_remove_events_for_client",
+      "AsyncTCP_detail::handle_async_event",
+      "_reset_tcp_callbacks",
+      "_tcp_connected",
+      "AsyncTCP_detail::tcp_poll",
+      "AsyncTCP_detail::tcp_recv",
+      "AsyncTCP_detail::tcp_sent",
+      "AsyncTCP_detail::tcp_error",
+      "_tcp_dns_found",
+      "_tcp_close_api",
+      "_tcp_close",
+      "AsyncClient::close",
+      "AsyncClient::_close"
+    ]
+  }
+}

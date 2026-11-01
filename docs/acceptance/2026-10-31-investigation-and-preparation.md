@@ -105,5 +105,8 @@ merges and releases remain separate owner-authorized operations.
 Detailed results are in each worktree's `.local/*implementation-report.md` or
 `.local/operating-modes-report.md`, the independent
 `C:/Temp/energy-review-20261031.md`, and
-`C:/Temp/asynctcp-contribution-20261031-152650/` (source-derived host harnesses,
+`docs/acceptance/artifacts/2026-10-31-asynctcp/` (recovered source-derived host harnesses,
 findings, compatibility report and structured results).
+
+The archive README records the 2026-11-01 recovery provenance and separate
+ignored local evidence locations; historical outcomes above remain unchanged.

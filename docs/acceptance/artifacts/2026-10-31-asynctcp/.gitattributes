@@ -1,0 +1,3 @@
+# Preserve the captured evidence and upstream input bytes across checkouts.
+historical/** -text whitespace=cr-at-eol
+upstream/** -text whitespace=cr-at-eol
