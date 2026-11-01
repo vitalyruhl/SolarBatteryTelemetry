@@ -104,7 +104,7 @@ merges and releases remain separate owner-authorized operations.
 
 Detailed results are in each worktree's `.local/*implementation-report.md` or
 `.local/operating-modes-report.md`, the independent
-`C:/Temp/energy-review-20261031.md`, and
+`docs/acceptance/artifacts/2026-10-31-energy-review.md`, and
 `docs/acceptance/artifacts/2026-10-31-asynctcp/` (recovered source-derived host harnesses,
 findings, compatibility report and structured results).
 
