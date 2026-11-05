@@ -157,6 +157,15 @@ void setup() {
     telemetryMqtt.afterLoad();
     victronReadout.afterLoad();
     bmsReadout.afterLoad();
+#if SBT_CONTROLLER_SCAN_TEST
+    // [MOCKED!] Passive filtering only: no real peer or GATT connection is configured.
+    cm::BleAddress scanFixture{};
+    std::memcpy(scanFixture.text,"02:00:00:00:00:01",sizeof(scanFixture.text));
+    if(!bluetooth.configureAdvertisementPeer(scanFixture)){
+        Serial.println("[E] [MOCKED!] Controller scan fixture rejected");return;
+    }
+    Serial.println("[I] [MOCKED!] Controller scan fixture enabled; no GATT peer");
+#endif
     Preferences readoutPrefs;
     if(!readoutPrefs.begin("ConfigManager",false)){lmg.logTag(LL::Error, "SETUP", "Readout initialization failed");return;}
     const bool readoutReady=sbt::enableReadoutBluetoothOnce(readoutPrefs,bluetooth.settings().enabled,victronReadout.configured()||bmsReadout.configured());
@@ -189,6 +198,23 @@ void loop() {
     victronReadout.loop(now);
     bmsReadout.loop(now);
     bluetooth.loop(now);
+#if SBT_CONTROLLER_SCAN_TEST
+    // [MOCKED!] Read host status only; CM's worker remains the sole radio owner.
+    static uint32_t scanSampleAt=0,scanReportAt=0,scanSamples=0,scanActive=0,scanStarts=0;
+    static bool previousScan=false;
+    if(uint32_t(now-scanSampleAt)>=100){
+        scanSampleAt=now;
+        const bool active=NimBLEDevice::isInitialized()&&ble_gap_disc_active();
+        ++scanSamples;if(active)++scanActive;if(active&&!previousScan)++scanStarts;
+        previousScan=active;
+    }
+    if(uint32_t(now-scanReportAt)>=30000){
+        scanReportAt=now;
+        Serial.printf("[I] [MOCKED!] BT_SCAN samples=%lu active=%lu starts=%lu\n",
+            static_cast<unsigned long>(scanSamples),static_cast<unsigned long>(scanActive),
+            static_cast<unsigned long>(scanStarts));
+    }
+#endif
 
     // BLE dispatch may stamp a newer sample than the loop timestamp above.
     // Copy each snapshot before capturing its health timestamp, including rollover.

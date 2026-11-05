@@ -1,5 +1,17 @@
 # SolarBatteryTelemetry
 
+## Bluetooth controller test candidate 1.5.1
+
+The separate `fix/esp32-bt-controller` candidate links Espressif's IDF4.4.7-specific
+controller0b40e99 from a hash-verified, worktree-local archive. Run
+`python tools/bt_controller.py --prepare` before building. The shared SDK remains
+unchanged, and post-link checks record the actual controller provenance.
+See the [candidate and rollback record](docs/acceptance/2026-10-31-bt-controller-candidate.md).
+The owner requested production testing immediately after the short bench gate;
+production1.5.1 is installed with a confirmed BLE-off recovery boot and RAM-only
+BLE activation. The initial real-device observation passed; long-term stability
+is unproven. Do not Save all during the recovery experiment.
+
 ## Cell telemetry and paced diagnostics 1.5.0
 
 Production 1.5.0 was confirmed after the owner-authorized five-minute test on
@@ -368,4 +380,4 @@ does not establish a repair of the underlying BLE interruptions or HTTP failures
 
 Victron error code and daily yield are retained on their existing scalar MQTT topics. Separate retained `victron/last_valid/error_code` and `victron/last_valid/yield_today_wh` JSON topics preserve each last valid reading with its actual reception time for display. Live source availability remains strict; display history is never a control input. See [MQTT display history](docs/MQTT.md#140-victron-display-history) for clock and date handling.
 
-HA Allow controls now follow actual MOS readback and use fresh, explicit commands after a restart. The common ESP/HA control gate is persistent and blocks all external MOS writes, including SIL emergency requests, when off. See [the current control contract](docs/BMS.md#guarded-mos-permissions), [MQTT examples](docs/home-assistant-bms-controls.yaml) and [gate template](docs/home-assistant-bms-gate.yaml).
+HA Allow controls now follow actual MOS readback and use fresh, explicit commands after a restart. The common ESP/HA control gate is persistent and blocks all external MOS writes when off. SIL 5.6.1 publishes no MOS commands; received directional protections and MOS feedback still qualify its inverter control. Existing manual SBT/HA controls and autonomous BMS hardware protection remain unchanged. See [the current control contract](docs/BMS.md#guarded-mos-permissions), [MQTT examples](docs/home-assistant-bms-controls.yaml) and [gate template](docs/home-assistant-bms-gate.yaml).

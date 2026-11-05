@@ -1,0 +1,187 @@
+{
+  "recorded_at": "2026-10-31T09:03:42Z",
+  "all_expected_observations": true,
+  "cases": [
+    {
+      "version": "old",
+      "case": "oom-poll",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-poll",
+      "elapsed_seconds": 0.125
+    },
+    {
+      "version": "old",
+      "case": "oom-recv",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-recv",
+      "elapsed_seconds": 0.025
+    },
+    {
+      "version": "old",
+      "case": "oom-sent",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-sent",
+      "elapsed_seconds": 0.029
+    },
+    {
+      "version": "old",
+      "case": "oom-error",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-error",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "old",
+      "case": "oom-clear",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-clear",
+      "elapsed_seconds": 0.026
+    },
+    {
+      "version": "old",
+      "case": "oom-connected",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-connected",
+      "elapsed_seconds": 0.026
+    },
+    {
+      "version": "old",
+      "case": "oom-dns",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-dns",
+      "elapsed_seconds": 0.025
+    },
+    {
+      "version": "old",
+      "case": "oom-accept",
+      "returncode": 3221225477,
+      "returncode_hex": "0xc0000005",
+      "expected_observation": true,
+      "stdout": "",
+      "stderr": "injecting allocation failure in oom-accept",
+      "elapsed_seconds": 0.026
+    },
+    {
+      "version": "old",
+      "case": "queue-no-refill",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"blocked\":false,\"completed_before_release\":true,\"queue_size\":32}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "old",
+      "case": "queue-refill",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"blocked\":true,\"completed_before_release\":false,\"queue_size\":32}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "stable",
+      "case": "oom-poll",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.125
+    },
+    {
+      "version": "stable",
+      "case": "oom-recv",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "stable",
+      "case": "oom-sent",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "stable",
+      "case": "oom-error",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.028
+    },
+    {
+      "version": "stable",
+      "case": "oom-connected",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "stable",
+      "case": "oom-dns",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"allocation_failure_handled\":true,\"queue_size\":0}",
+      "stderr": "",
+      "elapsed_seconds": 0.026
+    },
+    {
+      "version": "stable",
+      "case": "queue-no-refill",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"blocked\":false,\"completed_before_release\":true,\"queue_size\":31}",
+      "stderr": "",
+      "elapsed_seconds": 0.027
+    },
+    {
+      "version": "stable",
+      "case": "queue-refill",
+      "returncode": 0,
+      "returncode_hex": "0x0",
+      "expected_observation": true,
+      "stdout": "{\"blocked\":false,\"completed_before_release\":true,\"queue_size\":32}",
+      "stderr": "",
+      "elapsed_seconds": 0.026
+    }
+  ],
+  "scope": "Deterministic host reproduction using exact selected source function bodies. Expected old OOM access violation and queue self-blocking are defects, not successful production behavior. No hardware test, deployment, public fork, issue, PR, or multi-day test."
+}

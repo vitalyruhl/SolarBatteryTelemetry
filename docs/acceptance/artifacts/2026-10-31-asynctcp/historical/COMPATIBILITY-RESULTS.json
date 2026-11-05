@@ -1,0 +1,66 @@
+{
+  "source_commit": "48726cad93ee822deac96c7631634cd38c28209b",
+  "source_clean": true,
+  "unchanged_freeze_files": 194,
+  "live_ui": 0,
+  "settings_ui": 1,
+  "matrix": {
+    "SBT": "1.4.12",
+    "CM": "4.10.5 exact unchanged freeze",
+    "ESPAsyncWebServer-esphome": "3.4.0",
+    "Baseline AsyncTCP-esphome": "2.1.4",
+    "Candidate ESP32Async/AsyncTCP": "3.5.0",
+    "PlatformIO espressif32": "7.0.1",
+    "Arduino ESP32": "2.0.17 (3.20017.241212+sha.dcc1105b)",
+    "ESP-IDF": "4.4.7",
+    "Xtensa toolchain": "8.4.0+2021r2-patch5",
+    "NimBLE-Arduino": "2.5.1",
+    "PubSubClient": "2.8.0",
+    "ArduinoJson": "7.4.3"
+  },
+  "builds": [
+    {
+      "environment": "usb",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-usb.log",
+      "elapsed_seconds": 169.6,
+      "ram_bytes": 83220,
+      "flash_bytes": 1316613,
+      "warnings": 165,
+      "new_tcp_compiled": false,
+      "old_tcp_compiled": true,
+      "cm_units": 21,
+      "webserver_units": 7
+    },
+    {
+      "environment": "compat_async35_usb",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-compat_async35_usb.log",
+      "elapsed_seconds": 128.9,
+      "ram_bytes": 83148,
+      "flash_bytes": 1316617,
+      "warnings": 173,
+      "new_tcp_compiled": true,
+      "old_tcp_compiled": false,
+      "cm_units": 21,
+      "webserver_units": 7
+    },
+    {
+      "environment": "compat_async35_ota",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-compat_async35_ota.log",
+      "elapsed_seconds": 163.4,
+      "ram_bytes": 83148,
+      "flash_bytes": 1316617,
+      "warnings": 173,
+      "new_tcp_compiled": true,
+      "old_tcp_compiled": false,
+      "cm_units": 21,
+      "webserver_units": 7
+    }
+  ],
+  "new_warning_messages": [
+    "warning: 'void AsyncClient::close(bool)' is deprecated: Use AsyncClient::close() instead [-Wdeprecated-declarations]"
+  ],
+  "scope": "Build compatibility only; no uploads, hardware/runtime tests, multi-day test or public mutation."
+}

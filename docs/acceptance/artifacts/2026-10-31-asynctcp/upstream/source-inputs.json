@@ -1,0 +1,50 @@
+{
+  "scope": "Exact bytes recovered from clean pinned upstream working trees; source-file line endings may differ from canonical Git blobs. No source fix applied.",
+  "files": [
+    {
+      "path": "esphome/AsyncTCP.cpp",
+      "repository": "https://github.com/esphome/AsyncTCP",
+      "commit": "27cb883234bcea25cb952deefc571d97b3c09b0f",
+      "upstream_path": "src/AsyncTCP.cpp",
+      "upstream_git_blob": "b1d5e37f66316739db7c38c4e1641b8c6a438b3e",
+      "sha256": "fb98241536d307cd5a03b4fc54f18687f6880b9051db561f7fc4da2bf70b8631",
+      "capture_bytes": 39179
+    },
+    {
+      "path": "esphome/LICENSE",
+      "repository": "https://github.com/esphome/AsyncTCP",
+      "commit": "27cb883234bcea25cb952deefc571d97b3c09b0f",
+      "upstream_path": "LICENSE",
+      "upstream_git_blob": null,
+      "sha256": "ea7d049c7705dc13afc202dd18e1827f3484f8212fd3fa7b82fc4a0c363432c9",
+      "capture_bytes": 7816
+    },
+    {
+      "path": "esp32async-v3.5.0/AsyncTCP.cpp",
+      "repository": "https://github.com/ESP32Async/AsyncTCP",
+      "commit": "5bd9e2dbde8de5d0652e8e69565b8b561d866f18",
+      "upstream_path": "src/AsyncTCP.cpp",
+      "upstream_git_blob": "5a172e18bd1359f26668a523dff225cfca277b0a",
+      "sha256": "1fc2c601ab80c282f5db3fa6563a5036bb5b7c4de57e331d29aab5ce79650d5e",
+      "capture_bytes": 45470
+    },
+    {
+      "path": "esp32async-v3.5.0/AsyncTCPSimpleIntrusiveList.h",
+      "repository": "https://github.com/ESP32Async/AsyncTCP",
+      "commit": "5bd9e2dbde8de5d0652e8e69565b8b561d866f18",
+      "upstream_path": "src/AsyncTCPSimpleIntrusiveList.h",
+      "upstream_git_blob": "589268ce0ba59cbea0e007a81ee1e3d582ac1259",
+      "sha256": "3802c8ead38128a2a6679a793b2ad3321f46a43abf64f2e5b558dff17c8b3e2b",
+      "capture_bytes": 3283
+    },
+    {
+      "path": "esp32async-v3.5.0/LICENSE",
+      "repository": "https://github.com/ESP32Async/AsyncTCP",
+      "commit": "5bd9e2dbde8de5d0652e8e69565b8b561d866f18",
+      "upstream_path": "LICENSE",
+      "upstream_git_blob": null,
+      "sha256": "ea7d049c7705dc13afc202dd18e1827f3484f8212fd3fa7b82fc4a0c363432c9",
+      "capture_bytes": 7816
+    }
+  ]
+}

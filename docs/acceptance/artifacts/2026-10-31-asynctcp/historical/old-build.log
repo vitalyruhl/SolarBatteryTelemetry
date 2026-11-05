@@ -1,0 +1,13 @@
+C:\Temp\asynctcp-contribution-20261031-152650\old_harness.cpp:166:12: warning: cast to smaller integer type 'int' from 'void *' [-Wvoid-pointer-to-int-cast]
+  166 |         if((int)first_packet->arg == (int)arg){
+      |            ^~~~~~~~~~~~~~~~~~~~~~
+C:\Temp\asynctcp-contribution-20261031-152650\old_harness.cpp:166:38: warning: cast to smaller integer type 'int' from 'void *' [-Wvoid-pointer-to-int-cast]
+  166 |         if((int)first_packet->arg == (int)arg){
+      |                                      ^~~~~~~~
+C:\Temp\asynctcp-contribution-20261031-152650\old_harness.cpp:179:12: warning: cast to smaller integer type 'int' from 'void *' [-Wvoid-pointer-to-int-cast]
+  179 |         if((int)packet->arg == (int)arg){
+      |            ^~~~~~~~~~~~~~~~
+C:\Temp\asynctcp-contribution-20261031-152650\old_harness.cpp:179:32: warning: cast to smaller integer type 'int' from 'void *' [-Wvoid-pointer-to-int-cast]
+  179 |         if((int)packet->arg == (int)arg){
+      |                                ^~~~~~~~
+4 warnings generated.

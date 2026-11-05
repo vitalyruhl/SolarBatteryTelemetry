@@ -1,0 +1,17 @@
+{
+  "source_commit": "48726cad93ee822deac96c7631634cd38c28209b",
+  "consumer": "C:\\Temp\\asynctcp-contribution-20261031-152650\\sbt-compat-consumer",
+  "original_tracked_status": "",
+  "private_build_input_paths": [
+    "platformio.local.ini",
+    "src/secret/secrets.h"
+  ],
+  "cm_freeze": ".local/cm-ble-reboot-4.10.5-final-package",
+  "candidate_dependency": "ESP32Async/AsyncTCP@3.5.0",
+  "ignored_dependency": "AsyncTCP-esphome",
+  "profiles": [
+    "usb",
+    "compat_async35_usb"
+  ],
+  "product_version_changed": false
+}

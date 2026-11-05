@@ -1,0 +1,26 @@
+{
+  "state": "succeeded",
+  "started_at": "2026-10-31T09:14:57Z",
+  "stages": [
+    {
+      "environment": "usb",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-usb.log",
+      "elapsed_seconds": 169.6
+    },
+    {
+      "environment": "compat_async35_usb",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-compat_async35_usb.log",
+      "elapsed_seconds": 128.9
+    },
+    {
+      "environment": "compat_async35_ota",
+      "returncode": 0,
+      "log": "C:\\Temp\\asynctcp-contribution-20261031-152650\\compat-build-compat_async35_ota.log",
+      "elapsed_seconds": 163.4
+    }
+  ],
+  "active_environment": "compat_async35_ota",
+  "ended_at": "2026-10-31T09:22:39Z"
+}
