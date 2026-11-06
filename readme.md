@@ -1,5 +1,43 @@
 # SolarBatteryTelemetry
 
+## ESP32-C3 replacement collector
+
+The owner-authorized `c3` environment runs normal SBT behavior on the confirmed
+ESP32-C3 Super Mini V1601. It replaces the disconnected original collector at
+192.168.2.21 with the existing `SolarBatteryTelemetry` MQTT root, client identity,
+real BMS/Victron settings and previous control policy. BLE is saved enabled so
+readout restarts after a reboot. Build/upload the USB replacement with
+`pio run -e c3 -t upload --upload-port COM10`.
+
+The separate `testesp_c3` environment below always retains its isolated
+namespace and command denial. Switching to the replacement role requires the
+normal `c3` firmware, not only a UI setting change. Actual BMS/Victron reception
+must still be validated at the installation site.
+
+## ESP32-C3 recovery test candidate 1.5.2
+
+The `testesp_c3` environment targets the owner-confirmed ESP32-C3 with 4 MB
+flash on COM10. It uses DHCP and the real configured BMS/Victron readout, but
+publishes exclusively under `SBTTest/C3`; MOS and control-gate requests remain
+unconditionally blocked. It does not replace production MQTT telemetry.
+Build with `pio run -e testesp_c3`; upload only the confirmed test board.
+The classic ESP32 controller override is intentionally absent on C3.
+
+The selected `esp32-c3-supermini-v1601` board profile supplies GPIO8 and
+active-low polarity to CM's default `PulseOutput()` constructor. Its GPIO
+initialization happens at runtime, so no RGB/RMT operation occurs during global
+construction. The classic ESP32 application's explicit LED configuration stays
+unchanged.
+
+The consumer build derives two checked integer-type fixes and only the two
+CM 4.11.0 LED helper files for C3 from the unchanged frozen CM package. This is
+an explicit helper backport, not a complete CM upgrade. The SDK panic summary uses the correct
+architecture fields; C3 raw stack bytes are not reported as decoded backtraces.
+SBT redirects the frozen CM NTP entrypoint to Espressif's thread-safe SNTP APIs,
+serializing whole reconfigurations. This removes a demonstrated unsafe API
+boundary; it is not proof of the exact historical crash trigger.
+See the [investigation and device-test record](docs/acceptance/2026-11-06-c3-ble-recovery.md).
+
 ## Bluetooth controller test candidate 1.5.1
 
 The separate `fix/esp32-bt-controller` candidate links Espressif's IDF4.4.7-specific

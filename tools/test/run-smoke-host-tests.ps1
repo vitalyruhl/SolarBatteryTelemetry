@@ -23,3 +23,8 @@ foreach($profile in @(0,1)) {
     & $exe
     if($LASTEXITCODE -ne 0){throw 'Isolated namespace assertions failed'}
 }
+$fieldExe = Join-Path $outDir 'field_test_profile.exe'
+& 'C:/Program Files/LLVM/bin/clang++.exe' -std=c++17 -Wall -Wextra -Werror -DSBT_ISOLATED_TEST_PROFILE=1 -DSBT_FIELD_READOUT_TEST=1 -I (Join-Path $repo 'src') (Join-Path $repo 'test/host/field_test_profile_test.cpp') -o $fieldExe
+if($LASTEXITCODE -ne 0){throw 'Field profile host compile failed'}
+& $fieldExe
+if($LASTEXITCODE -ne 0){throw 'Field profile isolation assertions failed'}

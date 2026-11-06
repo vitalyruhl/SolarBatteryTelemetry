@@ -31,7 +31,11 @@ def development_package(env):
         raise RuntimeError('Development ConfigManager version mirror mismatch')
     from prepare_cm_development import verify_development_package
     source = Path(env.subst('$PROJECT_DIR')) / DEVELOPMENT_PIN.removeprefix('file://')
-    verify_development_package(source, library)
+    overrides = None
+    if env.BoardConfig().get('build.mcu') == 'esp32c3':
+        from c3_cm_portability import prepare_consumer
+        overrides = prepare_consumer(source, library)
+    verify_development_package(source, library, derived_content_overrides=overrides)
     return library
 
 def registry_package(libdeps, environment='usb'):

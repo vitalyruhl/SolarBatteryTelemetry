@@ -26,12 +26,20 @@ inline const PanicSummary& captureStoredPanicOnce(){
  static esp_core_dump_summary_t native{};
  result.summaryAttempted=true;result.summaryError=esp_core_dump_get_summary(&native);
  if(result.summaryError!=ESP_OK)return result;
- result.pc=native.exc_pc;result.cause=native.ex_info.exc_cause;
+ result.pc=native.exc_pc;
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+ result.cause=native.ex_info.exc_cause;
  result.depth=native.exc_bt_info.depth;result.backtraceCorrupted=native.exc_bt_info.corrupted;
+#elif CONFIG_IDF_TARGET_ARCH_RISCV
+ result.cause=native.ex_info.mcause;
+ // IDF exposes a raw RISC-V stack dump, not a decoded on-device backtrace.
+ result.abortDetails.status="unsupported_arch";
+#endif
  std::memcpy(result.task,native.exc_task,sizeof(result.task));
  static_assert(sizeof(native.app_elf_sha256)>1&&sizeof(native.app_elf_sha256)<=sizeof(result.elfSha256),"SDK ELF SHA prefix must fit");
  result.elfSha256Chars=sizeof(native.app_elf_sha256)-1;
  std::memcpy(result.elfSha256,native.app_elf_sha256,sizeof(native.app_elf_sha256));
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
  static_assert(sizeof(native.exc_bt_info.bt)==sizeof(result.backtrace),"Expected sixteen SDK backtrace entries");
  std::memcpy(result.backtrace,native.exc_bt_info.bt,sizeof(result.backtrace));
  char currentPrefix[17]{};esp_ota_get_app_elf_sha256(currentPrefix,sizeof(currentPrefix));
@@ -44,6 +52,7 @@ inline const PanicSummary& captureStoredPanicOnce(){
   bool read(uint32_t at,void* out,std::size_t length){return base<=partition->size&&at<=partition->size-base&&length<=partition->size-base-at&&esp_partition_read(partition,base+at,out,length)==ESP_OK;}
  } reader{partition,static_cast<uint32_t>(address-partition->address)};
  result.abortDetails=resolveAbortDetails(reader,static_cast<uint32_t>(size),native.ex_info.exc_a[2],context);
+#endif
 #else
  result.summaryAttempted=true;result.summaryError=ESP_ERR_NOT_SUPPORTED;
 #endif
