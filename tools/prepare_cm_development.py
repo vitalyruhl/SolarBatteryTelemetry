@@ -128,8 +128,9 @@ def mutable_ui_input(name: str) -> bool:
     return name == "src/html_content.h" or name.startswith("webui/dist/")
 
 
-def verify_development_package(package: Path, consumed: Path) -> None:
-    """Frozen package is exact; consumer may regenerate only derived UI/cache files."""
+def verify_development_package(package: Path, consumed: Path, *,
+                               derived_content_overrides: dict[str, bytes] | None = None) -> None:
+    """Keep freeze exact; allow only explicitly verified consumer C3 derivations."""
     if is_reparse(package) or is_reparse(package.parent):
         raise RuntimeError("CM source package must not be a symbolic link")
     expected = read_manifest(package)
@@ -139,13 +140,21 @@ def verify_development_package(package: Path, consumed: Path) -> None:
     for name, checksum in expected.items():
         if digest(package / name) != checksum:
             raise RuntimeError(f"CM source package hash mismatch: {name}")
+    overrides = derived_content_overrides or {}
+    if overrides:
+        from c3_cm_portability import expected_content
+        allowed = expected_content(package)
+        if any(name not in allowed or content != allowed[name]
+               for name, content in overrides.items()):
+            raise RuntimeError("Unapproved CM derived-content override")
     if (consumed / MANIFEST).read_bytes() != (package / MANIFEST).read_bytes():
         raise RuntimeError("Consumed CM manifest differs from frozen source package")
     immutable = {name for name in expected if not mutable_ui_input(name)}
     if consumed_files(consumed) != immutable:
         raise RuntimeError("Consumed CM source tree differs from manifest")
     for name in immutable:
-        if digest(consumed / name) != expected[name]:
+        checksum = hashlib.sha256(overrides[name]).hexdigest() if name in overrides else expected[name]
+        if digest(consumed / name) != checksum:
             raise RuntimeError(f"Consumed CM source is stale: {name}")
 
 

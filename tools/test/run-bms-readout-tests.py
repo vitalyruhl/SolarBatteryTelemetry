@@ -28,7 +28,9 @@ def main():
   victron=(ROOT/'src/victron/VictronReadout.h').read_text()
   validated=helper.between(victron,'class ValidatedText final','class Readout {')
   (out/'victron/VictronReadout.h').write_text('#pragma once\n#include <ConfigManager.h>\n#include "victron/VictronConfigMailbox.h"\nnamespace victron {\n'+validated+'\n}\n')
-  json=ROOT/'.pio/cell-telemetry-1.5.0/libdeps/usb/ArduinoJson/src'
+  json_candidates=sorted((ROOT/'.pio').glob('**/libdeps/*/ArduinoJson/src/ArduinoJson.h'))
+  if not json_candidates:raise RuntimeError('Installed ArduinoJson headers are required')
+  json=json_candidates[0].parent
   compiler=os.environ.get('SBT_HOST_CXX','C:/Program Files/LLVM/bin/clang++.exe')
   exe=out/'bms_readout_test.exe'
   command=[compiler,'-std=c++17','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations','-Wno-reorder-ctor','-Wno-unused-parameter']
@@ -36,8 +38,10 @@ def main():
   arguments=sys.argv[1:]
   if '--config-manager-path' in arguments:
    at=arguments.index('--config-manager-path');arguments=arguments[:at]+arguments[at+2:]
-  if '--isolated-only' in arguments:
-   subprocess.run(command+['-DSBT_ISOLATED_TEST_PROFILE=1',str(ROOT/'test/host/bms_isolated_profile_test.cpp'),'-o',str(exe)],check=True)
+  if '--isolated-only' in arguments or '--field-only' in arguments:
+   profile_flags=['-DSBT_ISOLATED_TEST_PROFILE=1']
+   if '--field-only' in arguments:profile_flags+=['-DSBT_FIELD_READOUT_TEST=1']
+   subprocess.run(command+profile_flags+[str(ROOT/'test/host/bms_isolated_profile_test.cpp'),'-o',str(exe)],check=True)
    subprocess.run([str(exe)],check=True)
    return
   subprocess.run(command+[str(ROOT/'test/host/bms_readout_test.cpp'),'-o',str(exe)],check=True)

@@ -3,7 +3,11 @@
 #include "runtime/AppRuntimeMetadata.h"
 #include <bluetooth/BluetoothManager.h>
 #include <core/CoreSettings.h>
+#include "network/SafeNtp.h"
+// Redirect this legacy header's NTP call without changing the frozen CM package.
+#define configTzTime sbtConfigTzTime
 #include <core/CoreWiFiServices.h>
+#undef configTzTime
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "diagnostics/HeapFailureDiagnostics.h"
@@ -43,7 +47,7 @@ static bool isValidMacAddress(const String &value);
 
 static bool applyIsolatedTestSettings() {
     if constexpr(!sbt::testprofile::isolated) return true;
-    for(const auto& key : {std::pair<const char*,const char*>{"BMS","BmsReadMac"},
+    if constexpr(sbt::testprofile::clearPeers) for(const auto& key : {std::pair<const char*,const char*>{"BMS","BmsReadMac"},
                           {"Victron","VictronReadMac"},{"Victron","VictronReadKey"}}) {
         auto* setting=ConfigManager.findSettingByKeyHint(key.first,key.second);
         if(!setting||setting->getType()!=SettingType::STRING)return false;
@@ -57,7 +61,11 @@ static bool applyIsolatedTestSettings() {
 }
 
 // Built-in LED pulse helper for WiFi status patterns.
+#if CONFIG_IDF_TARGET_ESP32C3
+static cm::helpers::PulseOutput buildinLED;
+#else
 static cm::helpers::PulseOutput buildinLED(LED_BUILTIN, cm::helpers::PulseOutput::ActiveLevel::ActiveHigh);
+#endif
 
 static cm::LoggingManager &lmg = cm::LoggingManager::instance();
 using LL = cm::LoggingManager::Level;
@@ -174,7 +182,8 @@ void setup() {
     setupNetworkDefaults();
     if constexpr(sbt::testprofile::isolated){
         wifiSettings.useDhcp.set(true);
-        Serial.println("[I] [MOCKED!] SBTTest/COM8; peers empty; BMS control blocked; DHCP");
+        Serial.printf("[I] Test root=%s; peers=%s; BMS control blocked; DHCP\n",
+                      sbt::testprofile::root,sbt::testprofile::clearPeers?"empty":"configured");
     }
 
     // SmartSolar uses passive advertisements; JBD uses serialized telemetry and explicitly enabled MOS transactions.
@@ -292,7 +301,6 @@ static void updateStatusLED()
         buildinLED.setPulseRepeat(/*count*/ 3, /*periodMs*/ 200, /*gapMs*/ 600);
         break;
     }
-
 }
 
 
